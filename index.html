@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FeeLedger — Fee Payment Tracker &amp; Risk Predictor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+/* ============================= TOKENS ============================= */
+:root{
+  --bg:#0A0F1C;
+  --bg-grad: radial-gradient(1200px 600px at 90% -10%, rgba(79,209,197,0.08), transparent 60%),
+             radial-gradient(1000px 500px at -10% 110%, rgba(228,184,92,0.06), transparent 60%);
+  --panel:#111A2C;
+  --panel-alt:#16213A;
+  --panel-hover:#182643;
+  --border: rgba(255,255,255,0.08);
+  --border-soft: rgba(255,255,255,0.05);
+  --text:#E7ECF5;
+  --text-dim:#93A1B8;
+  --text-faint:#5B6B85;
+  --accent:#4FD1C5;
+  --accent-dim: rgba(79,209,197,0.15);
+  --gold:#E4B85C;
+  --gold-dim: rgba(228,184,92,0.15);
+  --paid:#34D399;
+  --paid-dim: rgba(52,211,153,0.15);
+  --partial:#FBBF24;
+  --partial-dim: rgba(251,191,36,0.15);
+  --pending:#FB7185;
+  --pending-dim: rgba(251,113,133,0.15);
+  --danger:#F2545B;
+  --radius:14px;
+  --radius-sm:8px;
+  --font-display:'Sora',sans-serif;
+  --font-body:'Inter',sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;
+  --shadow: 0 10px 30px rgba(0,0,0,0.35);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--bg) var(--bg-grad);
+  color:var(--text);
+  font-family:var(--font-body);
+  font-size:14px;
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+::selection{ background: var(--accent-dim); color: var(--text); }
+.mono{ font-family:var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing:-0.2px; }
+a{ color:var(--accent); }
+button{ font-family:var(--font-body); cursor:pointer; }
+::-webkit-scrollbar{ width:10px; height:10px; }
+::-webkit-scrollbar-track{ background:transparent; }
+::-webkit-scrollbar-thumb{ background:#26314B; border-radius:10px; }
+::-webkit-scrollbar-thumb:hover{ background:#33405f; }
+
+/* ============================= LAYOUT ============================= */
+.app{ display:flex; min-height:100vh; }
+
+.sidebar{
+  width:236px; flex-shrink:0;
+  background:linear-gradient(180deg, #0D1526, #0A0F1C 70%);
+  border-right:1px solid var(--border);
+  display:flex; flex-direction:column;
+  padding:22px 16px;
+  position:sticky; top:0; height:100vh;
+}
+.brand{ display:flex; align-items:center; gap:10px; padding:4px 6px 22px 6px; }
+.brand-mark{
+  width:34px; height:34px; border-radius:9px;
+  background:linear-gradient(135deg, var(--gold), var(--accent));
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-display); font-weight:800; color:#0A0F1C; font-size:15px;
+  box-shadow: 0 4px 14px rgba(228,184,92,0.25);
+}
+.brand-name{ font-family:var(--font-display); font-weight:700; font-size:16.5px; letter-spacing:0.2px; }
+.brand-sub{ font-size:10.5px; color:var(--text-faint); margin-top:1px; letter-spacing:0.4px; text-transform:uppercase; }
+
+.nav{ display:flex; flex-direction:column; gap:3px; margin-top:6px; }
+.nav-item{
+  display:flex; align-items:center; gap:11px;
+  padding:10px 12px; border-radius:10px;
+  color:var(--text-dim); font-weight:500; font-size:13.5px;
+  cursor:pointer; border:1px solid transparent;
+  transition:background .15s ease, color .15s ease, border-color .15s ease;
+  user-select:none;
+}
+.nav-item svg{ width:17px; height:17px; flex-shrink:0; opacity:0.85; }
+.nav-item:hover{ background:var(--panel-hover); color:var(--text); }
+.nav-item.active{
+  background:linear-gradient(90deg, var(--accent-dim), transparent);
+  color:var(--text); border-color:var(--border);
+}
+.nav-item.active svg{ opacity:1; color:var(--accent); }
+
+.sidebar-foot{ margin-top:auto; padding-top:16px; border-top:1px solid var(--border-soft); }
+.sidebar-foot-row{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-faint); margin-bottom:5px; }
+.sidebar-foot-row b{ color:var(--text-dim); font-weight:600; }
+
+.main{ flex:1; min-width:0; display:flex; flex-direction:column; }
+
+.topbar{
+  position:sticky; top:0; z-index:20;
+  background:rgba(10,15,28,0.85); backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border);
+  padding:16px 26px; display:flex; flex-direction:column; gap:12px;
+}
+.topbar-row1{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.page-title{ font-family:var(--font-display); font-size:20px; font-weight:700; }
+.page-desc{ font-size:12.5px; color:var(--text-faint); margin-top:2px; }
+.topbar-actions{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+.btn{
+  border:1px solid var(--border); background:var(--panel); color:var(--text);
+  padding:9px 14px; border-radius:10px; font-size:12.5px; font-weight:600;
+  display:inline-flex; align-items:center; gap:7px; transition:all .15s ease;
+}
+.btn:hover{ background:var(--panel-hover); border-color:rgba(255,255,255,0.15); }
+.btn-primary{ background:linear-gradient(135deg, var(--accent), #2fb8ac); color:#062824; border:none; }
+.btn-primary:hover{ filter:brightness(1.08); }
+.btn-ghost{ background:transparent; }
+.btn-sm{ padding:6px 10px; font-size:11.5px; }
+input[type=file]{ display:none; }
+
+.filters{ display:flex; gap:22px; flex-wrap:wrap; align-items:flex-start; }
+.filter-group{ display:flex; flex-direction:column; gap:6px; }
+.filter-label{ font-size:10.5px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-faint); font-weight:600; }
+.chip-row{ display:flex; gap:6px; flex-wrap:wrap; }
+.chip{
+  padding:6px 12px; border-radius:100px; border:1px solid var(--border);
+  background:var(--panel); color:var(--text-dim); font-size:12px; font-weight:600;
+  user-select:none; transition:all .12s ease;
+}
+.chip:hover{ border-color:rgba(255,255,255,0.2); color:var(--text); }
+.chip.active{ background:var(--accent-dim); border-color:var(--accent); color:var(--accent); }
+.chip.st-Paid.active{ background:var(--paid-dim); border-color:var(--paid); color:var(--paid); }
+.chip.st-Partial.active{ background:var(--partial-dim); border-color:var(--partial); color:var(--partial); }
+.chip.st-Pending.active{ background:var(--pending-dim); border-color:var(--pending); color:var(--pending); }
+.filter-reset{ align-self:flex-end; }
+
+.content{ padding:22px 26px 60px; }
+.tab-panel{ display:none; animation:fadein .25s ease; }
+.tab-panel.active{ display:block; }
+@keyframes fadein{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);} }
+
+/* ============================= KPI CARDS ============================= */
+.kpi-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:18px; }
+.kpi-card{
+  background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+  padding:16px 18px 14px; position:relative; overflow:hidden;
+}
+.kpi-card::before{
+  content:""; position:absolute; top:0; left:16px; right:16px; height:1px;
+  background:repeating-linear-gradient(90deg, var(--text-faint) 0 6px, transparent 6px 12px);
+  opacity:0.35;
+}
+.kpi-top{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;}
+.kpi-label{ font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; }
+.kpi-icon{ width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; }
+.kpi-icon svg{ width:15px; height:15px; }
+.kpi-value{ font-family:var(--font-mono); font-size:25px; font-weight:600; letter-spacing:-0.5px; }
+.kpi-sub{ font-size:11.5px; color:var(--text-dim); margin-top:5px; }
+.kpi-sub.up{ color:var(--paid); }
+.kpi-sub.down{ color:var(--pending); }
+
+/* ============================= PANELS / CHARTS ============================= */
+.grid-2{ display:grid; grid-template-columns:1.3fr 1fr; gap:14px; margin-bottom:14px; }
+.grid-3{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:14px; }
+.panel{
+  background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+  padding:18px 20px 14px;
+}
+.panel-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+.panel-title{ font-family:var(--font-display); font-size:14px; font-weight:700; }
+.panel-note{ font-size:11px; color:var(--text-faint); }
+.chart-wrap{ position:relative; height:250px; }
+.chart-wrap.tall{ height:320px; }
+
+/* ============================= PREDICTION TAB ============================= */
+.pred-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+.form-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
+.field{ display:flex; flex-direction:column; gap:6px; }
+.field label{ font-size:11.5px; color:var(--text-dim); font-weight:600; }
+.field select, .field input{
+  background:var(--panel-alt); border:1px solid var(--border); color:var(--text);
+  padding:10px 11px; border-radius:9px; font-size:13px; font-family:var(--font-body);
+}
+.field select:focus, .field input:focus{ outline:none; border-color:var(--accent); }
+.field-hint{ font-size:10.5px; color:var(--text-faint); }
+
+.gauge-wrap{ display:flex; flex-direction:column; align-items:center; padding:6px 0 4px; }
+.gauge-label-top{ font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.6px; font-weight:600; margin-bottom:6px;}
+.risk-badge{ font-family:var(--font-display); font-weight:800; font-size:22px; margin-top:6px; }
+.risk-badge.LOW{ color:var(--paid); }
+.risk-badge.MEDIUM{ color:var(--partial); }
+.risk-badge.HIGH{ color:var(--pending); }
+.gauge-scale{ display:flex; justify-content:space-between; width:230px; font-size:10px; color:var(--text-faint); margin-top:4px; font-weight:600; letter-spacing:0.4px; }
+.pred-class-row{ display:flex; justify-content:space-between; align-items:center; padding:9px 0; border-bottom:1px solid var(--border-soft); }
+.pred-class-row:last-child{ border-bottom:none; }
+.pred-class-name{ font-size:12.5px; font-weight:600; display:flex; align-items:center; gap:8px;}
+.dot{ width:8px; height:8px; border-radius:50%; display:inline-block; }
+.bar-track{ flex:1; height:7px; background:var(--panel-alt); border-radius:6px; margin:0 12px; overflow:hidden; }
+.bar-fill{ height:100%; border-radius:6px; }
+.pred-class-pct{ font-family:var(--font-mono); font-size:12.5px; width:44px; text-align:right; }
+
+.factor-row{ display:flex; align-items:center; gap:10px; padding:8px 0; }
+.factor-label{ width:180px; font-size:12px; color:var(--text-dim); flex-shrink:0; }
+.factor-bar-track{ flex:1; height:16px; background:var(--panel-alt); border-radius:5px; position:relative; overflow:hidden; }
+.factor-bar-fill{ height:100%; border-radius:5px; position:absolute; top:0; }
+.factor-val{ width:54px; text-align:right; font-family:var(--font-mono); font-size:11.5px; flex-shrink:0; }
+
+.empty-note{ font-size:12.5px; color:var(--text-faint); text-align:center; padding:30px 10px; }
+
+/* ============================= MODEL PERFORMANCE ============================= */
+.metric-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:16px; }
+.metric-card{ background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:14px 16px; text-align:center; }
+.metric-card .v{ font-family:var(--font-mono); font-size:22px; font-weight:600; }
+.metric-card .l{ font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.5px; margin-top:5px; font-weight:600; }
+table.metrics-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+table.metrics-table th{ text-align:left; color:var(--text-faint); font-weight:600; padding:8px 10px; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.4px; }
+table.metrics-table td{ padding:9px 10px; border-bottom:1px solid var(--border-soft); font-family:var(--font-mono); }
+table.metrics-table td.lbl{ font-family:var(--font-body); font-weight:600; }
+.cm-table{ border-collapse:collapse; margin-top:6px; }
+.cm-table th, .cm-table td{ border:1px solid var(--border); padding:10px 14px; text-align:center; font-family:var(--font-mono); font-size:12.5px; }
+.cm-table th{ background:var(--panel-alt); font-family:var(--font-body); font-weight:600; font-size:11px; color:var(--text-dim); }
+.cm-diag{ background:rgba(79,209,197,0.14); font-weight:700; }
+.callout{
+  border:1px solid var(--border); border-left:3px solid var(--gold);
+  background:var(--panel-alt); border-radius:8px; padding:12px 14px; font-size:12.5px; color:var(--text-dim); line-height:1.55; margin-top:8px;
+}
+.callout b{ color:var(--text); }
+
+/* ============================= DATA EXPLORER ============================= */
+.explorer-controls{ display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+.search-box{ position:relative; }
+.search-box input{ background:var(--panel-alt); border:1px solid var(--border); color:var(--text); padding:9px 12px 9px 34px; border-radius:9px; font-size:13px; width:250px; }
+.search-box svg{ position:absolute; left:11px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-faint); }
+.table-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:var(--radius); }
+table.data-table{ width:100%; border-collapse:collapse; font-size:12.5px; min-width:820px; }
+table.data-table th{ text-align:left; padding:11px 14px; background:var(--panel-alt); color:var(--text-dim); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; cursor:pointer; white-space:nowrap; border-bottom:1px solid var(--border); }
+table.data-table th:hover{ color:var(--text); }
+table.data-table th .arrow{ opacity:0.5; margin-left:3px; }
+table.data-table td{ padding:9px 14px; border-bottom:1px solid var(--border-soft); font-family:var(--font-mono); white-space:nowrap; }
+table.data-table tbody tr:hover{ background:rgba(255,255,255,0.02); }
+.status-pill{ font-family:var(--font-body); font-size:11px; font-weight:700; padding:3px 9px; border-radius:100px; display:inline-block; }
+.status-pill.Paid{ background:var(--paid-dim); color:var(--paid); }
+.status-pill.Partial{ background:var(--partial-dim); color:var(--partial); }
+.status-pill.Pending{ background:var(--pending-dim); color:var(--pending); }
+.flag-icon{ color:var(--danger); margin-right:5px; }
+.pager{ display:flex; justify-content:space-between; align-items:center; margin-top:12px; font-size:12px; color:var(--text-faint); }
+.pager-btns{ display:flex; gap:6px; }
+
+/* ============================= ABOUT ============================= */
+.about-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.about-panel p{ line-height:1.65; color:var(--text-dim); font-size:13px; margin:0 0 10px; }
+.about-panel ul{ margin:0 0 10px; padding-left:18px; color:var(--text-dim); font-size:13px; line-height:1.75; }
+.about-panel li b{ color:var(--text); }
+.col-list{ display:flex; flex-direction:column; gap:8px; }
+.col-item{ display:flex; justify-content:space-between; padding:8px 12px; background:var(--panel-alt); border-radius:8px; font-size:12.5px; }
+.col-item span:first-child{ font-weight:600; }
+.col-item span:last-child{ color:var(--text-faint); font-family:var(--font-mono); font-size:11.5px; }
+
+/* ============================= MISC ============================= */
+.legend-inline{ display:flex; gap:16px; flex-wrap:wrap; font-size:11.5px; color:var(--text-dim); }
+.legend-inline span{ display:inline-flex; align-items:center; gap:6px; }
+.hamburger{ display:none; }
+
+@media (max-width: 1180px){
+  .kpi-grid{ grid-template-columns:repeat(2,1fr); }
+  .grid-2{ grid-template-columns:1fr; }
+  .grid-3{ grid-template-columns:1fr 1fr; }
+  .metric-grid{ grid-template-columns:repeat(3,1fr); }
+  .pred-grid{ grid-template-columns:1fr; }
+  .about-grid{ grid-template-columns:1fr; }
+}
+@media (max-width: 860px){
+  .sidebar{ position:fixed; left:-260px; z-index:50; transition:left .2s ease; box-shadow:var(--shadow); }
+  .sidebar.open{ left:0; }
+  .hamburger{ display:flex; }
+  .grid-3{ grid-template-columns:1fr; }
+  .metric-grid{ grid-template-columns:repeat(2,1fr); }
+  .content{ padding:16px; }
+  .topbar{ padding:14px 16px; }
+}
+@media (max-width: 560px){
+  .kpi-grid{ grid-template-columns:1fr; }
+  .form-row{ grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ============================= SIDEBAR ============================= -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">₹</div>
+      <div>
+        <div class="brand-name">FeeLedger</div>
+        <div class="brand-sub">Payment Analytics</div>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="nav-item active" data-tab="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" data-tab="prediction">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 12 19 5"/><path d="M12 6v6l4 2"/></svg>
+        Prediction
+      </div>
+      <div class="nav-item" data-tab="model">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 15l4-6 3 3 5-8"/></svg>
+        Model Performance
+      </div>
+      <div class="nav-item" data-tab="explorer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>
+        Data Explorer
+      </div>
+      <div class="nav-item" data-tab="about">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/></svg>
+        About
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="sidebar-foot-row"><span>Records</span><b id="footRecords">—</b></div>
+      <div class="sidebar-foot-row"><span>Model</span><b>Softmax Regression</b></div>
+      <div class="sidebar-foot-row"><span>Runs</span><b>100% in-browser</b></div>
+    </div>
+  </aside>
+
+  <!-- ============================= MAIN ============================= -->
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-row1">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <button class="btn btn-sm hamburger" id="hamburgerBtn" style="display:none;">☰</button>
+          <div>
+            <div class="page-title" id="pageTitle">Dashboard</div>
+            <div class="page-desc" id="pageDesc">Fee collection overview across courses and batches</div>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <label class="btn" for="fileUpload">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            Upload Excel
+          </label>
+          <input type="file" id="fileUpload" accept=".xlsx,.xls,.csv">
+          <button class="btn btn-ghost" id="resetDataBtn">Reset to sample data</button>
+        </div>
+      </div>
+      <div class="filters" id="globalFilters">
+        <div class="filter-group">
+          <div class="filter-label">Course</div>
+          <div class="chip-row" id="courseChips"></div>
+        </div>
+        <div class="filter-group">
+          <div class="filter-label">Batch</div>
+          <div class="chip-row" id="batchChips"></div>
+        </div>
+        <div class="filter-group">
+          <div class="filter-label">Payment Status</div>
+          <div class="chip-row" id="statusChips"></div>
+        </div>
+        <button class="btn btn-ghost btn-sm filter-reset" id="resetFiltersBtn">Clear filters</button>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ============================= DASHBOARD TAB ============================= -->
+      <section class="tab-panel active" id="tab-dashboard">
+        <div class="kpi-grid" id="kpiGrid"></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Billed vs Collected by Course</div><div class="panel-note">₹ amount</div></div>
+            <div class="chart-wrap"><canvas id="chartCourseFee"></canvas></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Payment Status Split</div><div class="panel-note" id="statusNote">of filtered records</div></div>
+            <div class="chart-wrap"><canvas id="chartStatusDonut"></canvas></div>
+          </div>
+        </div>
+        <div class="grid-3">
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Billed vs Collected by Batch</div></div>
+            <div class="chart-wrap"><canvas id="chartBatchFee"></canvas></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Collection Rate by Course</div></div>
+            <div class="chart-wrap"><canvas id="chartCollectionRate"></canvas></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Outstanding Balance by Course</div></div>
+            <div class="chart-wrap"><canvas id="chartOutstanding"></canvas></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">Fee Due Timeline (by month)</div><div class="panel-note">Total fee due vs amount collected</div></div>
+          <div class="chart-wrap"><canvas id="chartTimeline"></canvas></div>
+        </div>
+      </section>
+
+      <!-- ============================= PREDICTION TAB ============================= -->
+      <section class="tab-panel" id="tab-prediction">
+        <div class="pred-grid">
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Fee Payment Risk Predictor</div></div>
+            <div class="panel-note" style="margin-bottom:14px;">Estimate the likely payment outcome for a student before their fee is fully collected.</div>
+            <div class="form-row">
+              <div class="field"><label>Course</label><select id="inCourse"></select></div>
+              <div class="field"><label>Batch</label><select id="inBatch"></select></div>
+            </div>
+            <div class="form-row">
+              <div class="field"><label>Total Fee (₹)</label><input type="number" id="inFee" min="0" step="100" value="70000"></div>
+              <div class="field"><label>Amount Paid So Far (₹)</label><input type="number" id="inPaid" min="0" step="100" value="20000"></div>
+            </div>
+            <div class="form-row">
+              <div class="field"><label>Fee Due Date</label><input type="date" id="inDue"></div>
+              <div class="field" style="justify-content:flex-end;"><label>&nbsp;</label><div class="field-hint">Model compares this date to the latest due date seen in the dataset.</div></div>
+            </div>
+            <button class="btn btn-primary" id="predictBtn" style="width:100%; justify-content:center; padding:11px; margin-top:6px;">Predict Payment Outcome</button>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Prediction Result</div></div>
+            <div id="predEmpty" class="empty-note">Fill in the form and click <b>Predict Payment Outcome</b> to see a result.</div>
+            <div id="predResult" style="display:none;">
+              <div class="gauge-wrap">
+                <div class="gauge-label-top">Non-Payment Risk</div>
+                <div class="chart-wrap" style="height:150px; width:260px;"><canvas id="chartGauge"></canvas></div>
+                <div class="risk-badge" id="riskBadge">—</div>
+                <div class="gauge-scale"><span>LOW</span><span>MEDIUM</span><span>HIGH</span></div>
+              </div>
+              <div style="margin-top:16px;">
+                <div id="predClassRows"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:14px; display:none;" id="explainPanel">
+          <div class="panel-head"><div class="panel-title">What's driving this prediction?</div><div class="panel-note">Top factors pushing toward risk (+) or toward full payment (−)</div></div>
+          <div id="factorRows"></div>
+        </div>
+      </section>
+
+      <!-- ============================= MODEL PERFORMANCE TAB ============================= -->
+      <section class="tab-panel" id="tab-model">
+        <div class="metric-grid" id="metricGrid"></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Confusion Matrix</div><div class="panel-note">Test set — rows = actual, columns = predicted</div></div>
+            <div id="cmWrap" style="overflow-x:auto;"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><div class="panel-title">Per-Class Metrics</div></div>
+            <div id="perClassWrap"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div class="panel-title">Feature Importance</div><div class="panel-note">Average absolute model weight per feature (standardized)</div></div>
+          <div class="chart-wrap tall"><canvas id="chartFeatureImportance"></canvas></div>
+        </div>
+        <div class="callout" id="modelCallout"></div>
+      </section>
+
+      <!-- ============================= DATA EXPLORER TAB ============================= -->
+      <section class="tab-panel" id="tab-explorer">
+        <div class="explorer-controls">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" id="searchInput" placeholder="Search student ID, course, batch…">
+          </div>
+          <div class="panel-note" id="explorerCount">—</div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th data-key="id">Student ID <span class="arrow"></span></th>
+                <th data-key="batch">Batch <span class="arrow"></span></th>
+                <th data-key="course">Course <span class="arrow"></span></th>
+                <th data-key="due">Due Date <span class="arrow"></span></th>
+                <th data-key="fee">Total Fee <span class="arrow"></span></th>
+                <th data-key="paid">Amount Paid <span class="arrow"></span></th>
+                <th data-key="balance">Balance <span class="arrow"></span></th>
+                <th data-key="status">Status <span class="arrow"></span></th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <div id="pagerInfo">—</div>
+          <div class="pager-btns">
+            <button class="btn btn-sm" id="prevPageBtn">Prev</button>
+            <button class="btn btn-sm" id="nextPageBtn">Next</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================= ABOUT TAB ============================= -->
+      <section class="tab-panel" id="tab-about">
+        <div class="about-grid">
+          <div class="panel about-panel">
+            <div class="panel-title" style="margin-bottom:10px;">Dataset</div>
+            <p id="aboutDatasetSummary">—</p>
+            <div class="col-list" id="aboutColumns"></div>
+          </div>
+          <div class="panel about-panel">
+            <div class="panel-title" style="margin-bottom:10px;">Data Cleaning Applied</div>
+            <ul id="aboutCleaning"></ul>
+          </div>
+        </div>
+        <div class="about-grid" style="margin-top:14px;">
+          <div class="panel about-panel">
+            <div class="panel-title" style="margin-bottom:10px;">Prediction Approach &amp; Limitations</div>
+            <p><b style="color:var(--text)">Target:</b> Payment Status — Paid / Partial / Pending, framed as a Non-Payment Risk score (P(Partial)+P(Pending)).</p>
+            <p><b style="color:var(--text)">Model:</b> Multinomial (softmax) logistic regression, trained from scratch in JavaScript via gradient descent — no server, no external ML library. Features are standardized; categorical fields (course, batch) are one-hot encoded.</p>
+            <p id="aboutLimitation" style="color:var(--partial);">—</p>
+          </div>
+          <div class="panel about-panel">
+            <div class="panel-title" style="margin-bottom:10px;">Tech Stack &amp; Deployment</div>
+            <ul>
+              <li><b>Single file:</b> everything — HTML, CSS, JS, and the starter dataset — lives in this one <span class="mono">index.html</span>.</li>
+              <li><b>Charts:</b> Chart.js (CDN).</li>
+              <li><b>Excel upload:</b> SheetJS / xlsx.js (CDN) reads .xlsx/.csv directly in the browser.</li>
+              <li><b>Model:</b> hand-written softmax regression — trains in under a second on page load.</li>
+              <li><b>Deploy:</b> upload this file to a GitHub repo, then enable it under <span class="mono">Settings → Pages</span>. No build step, no backend.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script>
+/* ==========================================================================
+   DATA — starter dataset, embedded as JSON. Cleaned from the uploaded
+   Excel workbook (FeeCollection sheet): whitespace/casing normalized on
+   Batch, exact duplicate rows removed. Records are kept as-is otherwise;
+   a `valid` flag marks rows usable for KPI totals & model training
+   (no negative amounts, no missing fee / due date / batch).
+   ========================================================================== */
+let RAW_DATA = [{"id":"FEE0017","batch":"2024-B","course":"Business Analytics","due":"2024-10-28","fee":49296.0,"paid":81352.0,"status":"Pending","valid":true},{"id":"FEE0081","batch":"2024-B","course":"HR Analytics","due":"2023-07-08","fee":null,"paid":88294.0,"status":"Pending","valid":false},{"id":"FEE0186","batch":"2023-A","course":"Full Stack Dev","due":null,"fee":53886.0,"paid":54592.0,"status":"Paid","valid":false},{"id":"FEE0327","batch":"2023-B","course":"Full Stack Dev","due":"2023-08-28","fee":63785.0,"paid":6749.0,"status":"Partial","valid":true},{"id":"FEE0419","batch":"2023-A","course":"Business Analytics","due":"2024-08-27","fee":103954.0,"paid":89846.0,"status":"Partial","valid":true},{"id":"FEE0498","batch":"2023-B","course":"Digital Marketing","due":"2023-09-12","fee":106787.0,"paid":89756.0,"status":"Partial","valid":true},{"id":"FEE0127","batch":"2024-B","course":"HR Analytics","due":"2023-10-28","fee":65897.0,"paid":16676.0,"status":"Pending","valid":true},{"id":"FEE0165","batch":"2024-B","course":"Data Analytics","due":"2023-10-11","fee":89451.0,"paid":92404.0,"status":"Paid","valid":true},{"id":"FEE0333","batch":"2023-B","course":"Business Analytics","due":"2024-03-12","fee":21862.0,"paid":78655.0,"status":"Pending","valid":true},{"id":"FEE0131","batch":"2024-A","course":"HR Analytics","due":"2023-05-17","fee":79541.0,"paid":22650.0,"status":"Paid","valid":true},{"id":"FEE0128","batch":"2023-A","course":"Digital Marketing","due":"2023-09-06","fee":53038.0,"paid":94791.0,"status":"Paid","valid":true},{"id":"FEE0162","batch":"2023-A","course":"Digital Marketing","due":"2023-09-12","fee":38401.0,"paid":116308.0,"status":"Paid","valid":true},{"id":"FEE0074","batch":"2023-B","course":"HR Analytics","due":"2023-10-03","fee":102116.0,"paid":24687.0,"status":"Partial","valid":true},{"id":"FEE0455","batch":null,"course":"Full Stack Dev","due":"2024-09-14","fee":110063.0,"paid":16040.0,"status":"Partial","valid":false},{"id":"FEE0228","batch":"2023-B","course":"Data Analytics","due":"2023-08-09","fee":61971.0,"paid":105494.0,"status":"Paid","valid":true},{"id":"FEE0273","batch":"2024-B","course":"Business Analytics","due":"2024-10-30","fee":44583.0,"paid":24276.0,"status":"Partial","valid":true},{"id":"FEE0156","batch":"2024-B","course":"Data Analytics","due":"2023-05-31","fee":48902.0,"paid":12196.0,"status":"Partial","valid":true},{"id":"FEE0324","batch":"2024-A","course":"HR Analytics","due":"2023-02-26","fee":100970.0,"paid":42269.0,"status":"Paid","valid":true},{"id":"FEE0190","batch":"2023-A","course":"Digital Marketing","due":"2024-05-11","fee":109020.0,"paid":119396.0,"status":"Pending","valid":true},{"id":"FEE0212","batch":"2024-B","course":"Business Analytics","due":"2024-08-05","fee":36173.0,"paid":85504.0,"status":"Paid","valid":true},{"id":"FEE0171","batch":"2024-B","course":"Full Stack Dev","due":"2023-05-11","fee":35388.0,"paid":67969.0,"status":"Paid","valid":true},{"id":"FEE0015","batch":"2024-B","course":"Full Stack Dev","due":"2024-07-17","fee":111228.0,"paid":113394.0,"status":"Pending","valid":true},{"id":"FEE0456","batch":"2024-A","course":"Digital Marketing","due":"2023-03-15","fee":72427.0,"paid":69806.0,"status":"Partial","valid":true},{"id":"FEE0476","batch":"2024-A","course":"Data Analytics","due":"2023-07-17","fee":98251.0,"paid":73062.0,"status":"Pending","valid":true},{"id":"FEE0088","batch":"2024-B","course":"Digital Marketing","due":"2023-01-07","fee":15997.0,"paid":47664.0,"status":"Pending","valid":true},{"id":"FEE0280","batch":"2023-A","course":"HR Analytics","due":"2023-03-10","fee":82551.0,"paid":56087.0,"status":"Partial","valid":true},{"id":"FEE0028","batch":null,"course":"Digital Marketing","due":"2024-06-03","fee":55484.0,"paid":112743.0,"status":"Paid","valid":false},{"id":"FEE0125","batch":"2024-A","course":"Data Analytics","due":"2023-01-01","fee":65022.0,"paid":75955.0,"status":"Paid","valid":true},{"id":"FEE0210","batch":"2024-A","course":"Data Analytics","due":"2023-03-16","fee":24638.0,"paid":56624.0,"status":"Partial","valid":true},{"id":"FEE0473","batch":"2024-B","course":"Business Analytics","due":"2023-10-02","fee":115890.0,"paid":26714.0,"status":"Partial","valid":true},{"id":"FEE0202","batch":"2023-A","course":"Full Stack Dev","due":"2024-02-25","fee":35641.0,"paid":37305.0,"status":"Pending","valid":true},{"id":"FEE0467","batch":"2023-B","course":"HR Analytics","due":"2024-11-04","fee":75252.0,"paid":54145.0,"status":"Partial","valid":true},{"id":"FEE0240","batch":"2023-B","course":"HR Analytics","due":"2023-07-11","fee":81399.0,"paid":24331.0,"status":"Paid","valid":true},{"id":"FEE0112","batch":null,"course":"Business Analytics","due":"2023-07-07","fee":83860.0,"paid":60167.0,"status":"Paid","valid":false},{"id":"FEE0154","batch":"2024-B","course":"HR Analytics","due":"2024-06-06","fee":49609.0,"paid":40403.0,"status":"Partial","valid":true},{"id":"FEE0038","batch":"2023-A","course":"Digital Marketing","due":"2023-10-10","fee":44605.0,"paid":12661.0,"status":"Paid","valid":true},{"id":"FEE0104","batch":"2023-B","course":"Digital Marketing","due":"2024-08-22","fee":42387.0,"paid":119324.0,"status":"Paid","valid":true},{"id":"FEE0231","batch":"2023-A","course":"Digital Marketing","due":"2024-05-03","fee":70309.0,"paid":94925.0,"status":"Partial","valid":true},{"id":"FEE0350","batch":"2024-B","course":"Business Analytics","due":"2023-05-15","fee":42378.0,"paid":19623.0,"status":"Partial","valid":true},{"id":"FEE0297","batch":"2023-B","course":"HR Analytics","due":"2023-11-26","fee":69850.0,"paid":4454.0,"status":"Pending","valid":true},{"id":"FEE0288","batch":"2024-A","course":"Data Analytics","due":"2023-03-14","fee":40156.0,"paid":36660.0,"status":"Paid","valid":true},{"id":"FEE0215","batch":"2024-B","course":"Business Analytics","due":null,"fee":52010.0,"paid":1263.0,"status":"Paid","valid":false},{"id":"FEE0359","batch":"2023-B","course":"Full Stack Dev","due":"2024-04-04","fee":118657.0,"paid":73511.0,"status":"Paid","valid":true},{"id":"FEE0449","batch":"2023-B","course":"Business Analytics","due":"2023-01-06","fee":73792.0,"paid":59414.0,"status":"Paid","valid":true},{"id":"FEE0375","batch":"2023-B","course":"HR Analytics","due":"2023-09-11","fee":43605.0,"paid":60955.0,"status":"Partial","valid":true},{"id":"FEE0302","batch":"2024-A","course":"Digital Marketing","due":"2023-05-16","fee":88927.0,"paid":69070.0,"status":"Pending","valid":true},{"id":"FEE0340","batch":"2023-A","course":"Business Analytics","due":"2024-09-27","fee":83578.0,"paid":110861.0,"status":"Partial","valid":true},{"id":"FEE0058","batch":"2024-B","course":"Digital Marketing","due":"2023-02-03","fee":36534.0,"paid":59220.0,"status":"Pending","valid":true},{"id":"FEE0356","batch":"2024-A","course":"Full Stack Dev","due":"2023-09-09","fee":117318.0,"paid":83045.0,"status":"Paid","valid":true},{"id":"FEE0252","batch":"2024-B","course":"HR Analytics","due":"2023-09-15","fee":87725.0,"paid":42719.0,"status":"Pending","valid":true},{"id":"FEE0305","batch":null,"course":"HR Analytics","due":"2024-09-19","fee":80842.0,"paid":117213.0,"status":"Pending","valid":false},{"id":"FEE0108","batch":"2023-A","course":"Digital Marketing","due":"2024-04-14","fee":null,"paid":82025.0,"status":"Partial","valid":false},{"id":"FEE0271","batch":"2024-B","course":"Business Analytics","due":"2023-11-01","fee":null,"paid":43016.0,"status":"Pending","valid":false},{"id":"FEE0334","batch":null,"course":"Business Analytics","due":"2024-03-14","fee":55108.0,"paid":7664.0,"status":"Paid","valid":false},{"id":"FEE0346","batch":"2023-A","course":"HR Analytics","due":"2024-10-26","fee":null,"paid":89142.0,"status":"Paid","valid":false},{"id":"FEE0352","batch":"2023-B","course":"Business Analytics","due":"2023-03-29","fee":26937.0,"paid":82427.0,"status":"Paid","valid":true},{"id":"FEE0411","batch":null,"course":"Full Stack Dev","due":"2023-02-16","fee":63929.0,"paid":84335.0,"status":"Partial","valid":false},{"id":"FEE0204","batch":"2023-B","course":"Digital Marketing","due":"2024-09-26","fee":50797.0,"paid":21352.0,"status":"Paid","valid":true},{"id":"FEE0140","batch":"2023-B","course":"Business Analytics","due":"2023-09-19","fee":33268.0,"paid":31351.0,"status":"Pending","valid":true},{"id":"FEE0137","batch":"2023-B","course":"HR Analytics","due":"2023-08-16","fee":48357.0,"paid":80978.0,"status":"Partial","valid":true},{"id":"FEE0283","batch":"2023-A","course":"Data Analytics","due":"2024-11-08","fee":75314.0,"paid":60523.0,"status":"Partial","valid":true},{"id":"FEE0343","batch":"2024-B","course":"HR Analytics","due":"2024-08-05","fee":25386.0,"paid":82799.0,"status":"Partial","valid":true},{"id":"FEE0197","batch":"2023-B","course":"Digital Marketing","due":"2024-09-11","fee":18688.0,"paid":36059.0,"status":"Paid","valid":true},{"id":"FEE0289","batch":"2024-A","course":"HR Analytics","due":"2023-08-11","fee":70904.0,"paid":45104.0,"status":"Paid","valid":true},{"id":"FEE0211","batch":"2024-A","course":"Data Analytics","due":"2024-04-09","fee":101363.0,"paid":57065.0,"status":"Partial","valid":true},{"id":"FEE0238","batch":"2023-B","course":"Full Stack Dev","due":"2024-04-06","fee":93118.0,"paid":30028.0,"status":"Paid","valid":true},{"id":"FEE0176","batch":"2023-A","course":"Digital Marketing","due":"2024-02-17","fee":62024.0,"paid":6858.0,"status":"Partial","valid":true},{"id":"FEE0041","batch":"2024-A","course":"HR Analytics","due":"2024-03-05","fee":20580.0,"paid":55235.0,"status":"Partial","valid":true},{"id":"FEE0052","batch":"2024-B","course":"Digital Marketing","due":"2024-04-28","fee":99292.0,"paid":64.0,"status":"Pending","valid":true},{"id":"FEE0082","batch":"2024-B","course":"Data Analytics","due":"2024-10-19","fee":22176.0,"paid":87278.0,"status":"Paid","valid":true},{"id":"FEE0391","batch":"2023-B","course":"Data Analytics","due":"2024-02-19","fee":59528.0,"paid":2606.0,"status":"Paid","valid":true},{"id":"FEE0044","batch":"2023-B","course":"Data Analytics","due":"2024-03-09","fee":111185.0,"paid":100398.0,"status":"Paid","valid":true},{"id":"FEE0378","batch":"2024-A","course":"Data Analytics","due":"2023-09-21","fee":118719.0,"paid":11663.0,"status":"Partial","valid":true},{"id":"FEE0470","batch":"2024-B","course":"Digital Marketing","due":"2024-08-30","fee":29239.0,"paid":70678.0,"status":"Paid","valid":true},{"id":"FEE0103","batch":"2023-A","course":"HR Analytics","due":"2023-01-20","fee":110504.0,"paid":43168.0,"status":"Pending","valid":true},{"id":"FEE0374","batch":"2023-A","course":"HR Analytics","due":"2023-11-14","fee":23050.0,"paid":440.0,"status":"Paid","valid":true},{"id":"FEE0458","batch":"2023-B","course":"Digital Marketing","due":"2024-10-06","fee":76086.0,"paid":69139.0,"status":"Partial","valid":true},{"id":"FEE0067","batch":"2024-B","course":"Data Analytics","due":"2024-10-12","fee":26025.0,"paid":3889.0,"status":"Paid","valid":true},{"id":"FEE0225","batch":"2024-A","course":"Full Stack Dev","due":"2024-09-09","fee":60097.0,"paid":30624.0,"status":"Paid","valid":true},{"id":"FEE0344","batch":"2024-A","course":"Digital Marketing","due":null,"fee":92228.0,"paid":90179.0,"status":"Paid","valid":false},{"id":"FEE0226","batch":"2024-A","course":"Business Analytics","due":"2024-07-15","fee":68276.0,"paid":99655.0,"status":"Paid","valid":true},{"id":"FEE0444","batch":"2024-B","course":"Digital Marketing","due":"2024-03-01","fee":90583.0,"paid":89328.0,"status":"Partial","valid":true},{"id":"FEE0453","batch":"2024-B","course":"Business Analytics","due":"2023-11-26","fee":37787.0,"paid":43473.0,"status":"Pending","valid":true},{"id":"FEE0331","batch":"2023-A","course":"Business Analytics","due":"2024-08-06","fee":64223.0,"paid":98297.0,"status":"Paid","valid":true},{"id":"FEE0016","batch":"2024-B","course":"Business Analytics","due":"2023-06-28","fee":36348.0,"paid":55240.0,"status":"Paid","valid":true},{"id":"FEE0113","batch":"2023-A","course":"Full Stack Dev","due":"2024-07-18","fee":56400.0,"paid":102229.0,"status":"Partial","valid":true},{"id":"FEE0248","batch":"2023-A","course":"Full Stack Dev","due":"2024-06-21","fee":49640.0,"paid":65941.0,"status":"Paid","valid":true},{"id":"FEE0145","batch":"2024-B","course":"Full Stack Dev","due":"2024-03-26","fee":80527.0,"paid":76700.0,"status":"Paid","valid":true},{"id":"FEE0370","batch":"2023-B","course":"Business Analytics","due":"2024-10-29","fee":91749.0,"paid":101536.0,"status":"Paid","valid":true},{"id":"FEE0068","batch":"2024-A","course":"Data Analytics","due":"2023-06-29","fee":101426.0,"paid":118194.0,"status":"Pending","valid":true},{"id":"FEE0102","batch":"2024-A","course":"HR Analytics","due":"2024-09-02","fee":109315.0,"paid":91987.0,"status":"Paid","valid":true},{"id":"FEE0187","batch":"2023-A","course":"HR Analytics","due":"2024-08-18","fee":104025.0,"paid":47458.0,"status":"Pending","valid":true},{"id":"FEE0135","batch":"2023-B","course":"HR Analytics","due":"2023-12-27","fee":39815.0,"paid":98092.0,"status":"Partial","valid":true},{"id":"FEE0330","batch":"2023-A","course":"Data Analytics","due":"2023-02-01","fee":75721.0,"paid":115256.0,"status":"Paid","valid":true},{"id":"FEE0427","batch":"2023-B","course":"Data Analytics","due":"2023-07-14","fee":26167.0,"paid":117985.0,"status":"Paid","valid":true},{"id":"FEE0398","batch":"2023-A","course":"Digital Marketing","due":"2023-07-21","fee":57311.0,"paid":91250.0,"status":"Pending","valid":true},{"id":"FEE0477","batch":"2024-B","course":"HR Analytics","due":"2023-09-19","fee":103771.0,"paid":64037.0,"status":"Paid","valid":true},{"id":"FEE0270","batch":"2024-B","course":"Data Analytics","due":"2023-10-24","fee":49678.0,"paid":1617.0,"status":"Paid","valid":true},{"id":"FEE0256","batch":"2024-B","course":"HR Analytics","due":"2023-12-02","fee":36770.0,"paid":17693.0,"status":"Partial","valid":true},{"id":"FEE0422","batch":"2023-B","course":"Data Analytics","due":"2024-05-10","fee":null,"paid":71540.0,"status":"Paid","valid":false},{"id":"FEE0329","batch":"2023-B","course":"Business Analytics","due":"2023-08-26","fee":33228.0,"paid":9821.0,"status":"Paid","valid":true},{"id":"FEE0138","batch":"2024-B","course":"Digital Marketing","due":"2024-12-16","fee":90088.0,"paid":4860.0,"status":"Paid","valid":true},{"id":"FEE0403","batch":"2024-A","course":"HR Analytics","due":"2023-12-25","fee":112427.0,"paid":68607.0,"status":"Pending","valid":true},{"id":"FEE0311","batch":"2023-B","course":"HR Analytics","due":"2024-01-28","fee":103242.0,"paid":96129.0,"status":"Paid","valid":true},{"id":"FEE0362","batch":"2024-B","course":"Digital Marketing","due":"2024-02-23","fee":106963.0,"paid":88003.0,"status":"Paid","valid":true},{"id":"FEE0249","batch":"2023-B","course":"Digital Marketing","due":"2023-06-26","fee":91882.0,"paid":42597.0,"status":"Partial","valid":true},{"id":"FEE0437","batch":"2024-A","course":"Business Analytics","due":"2023-01-01","fee":101540.0,"paid":24288.0,"status":"Paid","valid":true},{"id":"FEE0117","batch":"2024-B","course":"Full Stack Dev","due":"2024-02-19","fee":95399.0,"paid":14568.0,"status":"Paid","valid":true},{"id":"FEE0390","batch":"2023-A","course":"Business Analytics","due":"2023-11-20","fee":null,"paid":76586.0,"status":"Paid","valid":false},{"id":"FEE0321","batch":"2023-B","course":"Digital Marketing","due":"2024-12-27","fee":74119.0,"paid":27219.0,"status":"Partial","valid":true},{"id":"FEE0160","batch":"2023-B","course":"Business Analytics","due":"2024-04-07","fee":79558.0,"paid":110401.0,"status":"Partial","valid":true},{"id":"FEE0394","batch":"2023-A","course":"Digital Marketing","due":"2023-02-23","fee":97641.0,"paid":71873.0,"status":"Paid","valid":true},{"id":"FEE0396","batch":"2023-B","course":"Data Analytics","due":"2024-05-16","fee":91310.0,"paid":89987.0,"status":"Pending","valid":true},{"id":"FEE0219","batch":"2024-B","course":"Full Stack Dev","due":"2024-09-16","fee":100550.0,"paid":109238.0,"status":"Partial","valid":true},{"id":"FEE0408","batch":"2023-A","course":"HR Analytics","due":"2024-08-12","fee":16128.0,"paid":119466.0,"status":"Partial","valid":true},{"id":"FEE0084","batch":"2024-A","course":"HR Analytics","due":"2023-12-09","fee":79818.0,"paid":37116.0,"status":"Partial","valid":true},{"id":"FEE0245","batch":"2023-A","course":"Business Analytics","due":"2023-05-05","fee":53046.0,"paid":99728.0,"status":"Pending","valid":true},{"id":"FEE0242","batch":"2024-B","course":"Full Stack Dev","due":"2024-03-20","fee":83591.0,"paid":74292.0,"status":"Paid","valid":true},{"id":"FEE0315","batch":"2023-A","course":"Data Analytics","due":"2024-12-15","fee":20271.0,"paid":89966.0,"status":"Paid","valid":true},{"id":"FEE0062","batch":"2023-B","course":"Data Analytics","due":"2023-09-03","fee":80839.0,"paid":82516.0,"status":"Partial","valid":true},{"id":"FEE0435","batch":null,"course":"Data Analytics","due":"2024-07-17","fee":80898.0,"paid":88287.0,"status":"Paid","valid":false},{"id":"FEE0348","batch":"2023-B","course":"Full Stack Dev","due":"2024-02-16","fee":58021.0,"paid":46458.0,"status":"Paid","valid":true},{"id":"FEE0133","batch":"2023-B","course":"Full Stack Dev","due":"2023-11-12","fee":23271.0,"paid":77701.0,"status":"Paid","valid":true},{"id":"FEE0178","batch":"2024-B","course":"Full Stack Dev","due":"2024-09-10","fee":71965.0,"paid":74474.0,"status":"Paid","valid":true},{"id":"FEE0060","batch":"2023-B","course":"Full Stack Dev","due":"2023-05-17","fee":101078.0,"paid":29427.0,"status":"Pending","valid":true},{"id":"FEE0205","batch":"2023-B","course":"Digital Marketing","due":"2023-05-12","fee":99766.0,"paid":86682.0,"status":"Partial","valid":true},{"id":"FEE0106","batch":"2023-B","course":"Data Analytics","due":"2023-06-09","fee":39945.0,"paid":54862.0,"status":"Paid","valid":true},{"id":"FEE0011","batch":"2024-A","course":"Digital Marketing","due":"2024-06-25","fee":24854.0,"paid":66567.0,"status":"Paid","valid":true},{"id":"FEE0056","batch":"2024-A","course":"Business Analytics","due":"2023-01-16","fee":58148.0,"paid":116723.0,"status":"Paid","valid":true},{"id":"FEE0459","batch":"2024-A","course":"Data Analytics","due":"2023-02-04","fee":117231.0,"paid":112076.0,"status":"Partial","valid":true},{"id":"FEE0443","batch":"2024-B","course":"HR Analytics","due":"2024-07-01","fee":54963.0,"paid":77754.0,"status":"Pending","valid":true},{"id":"FEE0057","batch":"2024-A","course":"Digital Marketing","due":"2024-07-24","fee":87153.0,"paid":11055.0,"status":"Pending","valid":true},{"id":"FEE0366","batch":"2023-B","course":"Full Stack Dev","due":"2024-08-08","fee":101157.0,"paid":118903.0,"status":"Pending","valid":true},{"id":"FEE0167","batch":"2023-A","course":"Full Stack Dev","due":"2024-02-14","fee":82449.0,"paid":116073.0,"status":"Paid","valid":true},{"id":"FEE0089","batch":"2023-A","course":"Business Analytics","due":"2023-03-25","fee":74330.0,"paid":28069.0,"status":"Paid","valid":true},{"id":"FEE0272","batch":"2024-A","course":"Full Stack Dev","due":"2023-02-20","fee":91286.0,"paid":50672.0,"status":"Pending","valid":true},{"id":"FEE0025","batch":"2024-B","course":"Digital Marketing","due":"2024-04-13","fee":114430.0,"paid":-78513.0,"status":"Paid","valid":false},{"id":"FEE0115","batch":"2023-B","course":"Data Analytics","due":"2024-08-06","fee":108018.0,"paid":65308.0,"status":"Paid","valid":true},{"id":"FEE0402","batch":"2023-B","course":"Digital Marketing","due":"2024-05-23","fee":65877.0,"paid":71458.0,"status":"Paid","valid":true},{"id":"FEE0032","batch":"2024-A","course":"Full Stack Dev","due":"2024-08-01","fee":52260.0,"paid":10223.0,"status":"Partial","valid":true},{"id":"FEE0345","batch":"2023-B","course":"Business Analytics","due":"2023-02-04","fee":30225.0,"paid":74944.0,"status":"Paid","valid":true},{"id":"FEE0462","batch":"2024-B","course":"Data Analytics","due":"2024-01-01","fee":117535.0,"paid":2291.0,"status":"Partial","valid":true},{"id":"FEE0354","batch":"2024-B","course":"HR Analytics","due":"2024-11-05","fee":62366.0,"paid":93826.0,"status":"Partial","valid":true},{"id":"FEE0442","batch":"2024-A","course":"Business Analytics","due":"2024-03-30","fee":20349.0,"paid":77810.0,"status":"Pending","valid":true},{"id":"FEE0191","batch":"2024-B","course":"Full Stack Dev","due":"2024-11-13","fee":17673.0,"paid":16488.0,"status":"Pending","valid":true},{"id":"FEE0158","batch":"2023-A","course":"Business Analytics","due":"2023-12-27","fee":77873.0,"paid":15372.0,"status":"Pending","valid":true},{"id":"FEE0400","batch":"2024-A","course":"Full Stack Dev","due":"2023-06-23","fee":35886.0,"paid":13057.0,"status":"Paid","valid":true},{"id":"FEE0451","batch":"2023-B","course":"Full Stack Dev","due":"2024-04-26","fee":78528.0,"paid":57941.0,"status":"Partial","valid":true},{"id":"FEE0198","batch":"2024-B","course":"HR Analytics","due":"2024-06-21","fee":84284.0,"paid":18394.0,"status":"Paid","valid":true},{"id":"FEE0129","batch":"2023-A","course":"HR Analytics","due":"2024-01-20","fee":70038.0,"paid":31514.0,"status":"Paid","valid":true},{"id":"FEE0471","batch":"2024-B","course":"Data Analytics","due":"2023-12-22","fee":101971.0,"paid":88782.0,"status":"Paid","valid":true},{"id":"FEE0124","batch":"2024-A","course":"Full Stack Dev","due":"2024-04-04","fee":76600.0,"paid":-97555.0,"status":"Paid","valid":false},{"id":"FEE0339","batch":"2023-B","course":"Full Stack Dev","due":"2024-07-26","fee":42201.0,"paid":24647.0,"status":"Pending","valid":true},{"id":"FEE0279","batch":"2023-B","course":"HR Analytics","due":"2024-09-23","fee":115757.0,"paid":-28522.0,"status":"Pending","valid":false},{"id":"FEE0480","batch":"2023-B","course":"Digital Marketing","due":"2023-03-17","fee":115110.0,"paid":46281.0,"status":"Pending","valid":true},{"id":"FEE0099","batch":"2023-B","course":"Full Stack Dev","due":"2024-01-18","fee":110201.0,"paid":78629.0,"status":"Paid","valid":true},{"id":"FEE0300","batch":"2023-B","course":"Data Analytics","due":"2024-07-10","fee":119775.0,"paid":73920.0,"status":"Partial","valid":true},{"id":"FEE0299","batch":"2023-A","course":"Full Stack Dev","due":"2024-10-12","fee":115190.0,"paid":22873.0,"status":"Paid","valid":true},{"id":"FEE0465","batch":"2024-A","course":"Business Analytics","due":"2024-12-12","fee":53059.0,"paid":78883.0,"status":"Partial","valid":true},{"id":"FEE0295","batch":"2023-B","course":"Full Stack Dev","due":"2024-08-11","fee":115459.0,"paid":91257.0,"status":"Partial","valid":true},{"id":"FEE0255","batch":"2023-B","course":"Business Analytics","due":"2023-04-08","fee":79442.0,"paid":86978.0,"status":"Partial","valid":true},{"id":"FEE0147","batch":"2023-A","course":"Data Analytics","due":"2023-10-13","fee":109542.0,"paid":6955.0,"status":"Paid","valid":true},{"id":"FEE0181","batch":"2024-A","course":"Full Stack Dev","due":"2024-02-22","fee":23983.0,"paid":71180.0,"status":"Pending","valid":true},{"id":"FEE0357","batch":"2024-A","course":"Full Stack Dev","due":"2024-10-05","fee":55160.0,"paid":82805.0,"status":"Paid","valid":true},{"id":"FEE0303","batch":"2023-A","course":"HR Analytics","due":"2023-02-03","fee":99860.0,"paid":99059.0,"status":"Partial","valid":true},{"id":"FEE0241","batch":"2023-A","course":"Data Analytics","due":"2024-01-17","fee":42684.0,"paid":67573.0,"status":"Pending","valid":true},{"id":"FEE0388","batch":"2024-A","course":"Digital Marketing","due":"2024-11-07","fee":20310.0,"paid":87659.0,"status":"Pending","valid":true},{"id":"FEE0282","batch":"2023-B","course":"Business Analytics","due":"2024-10-29","fee":50568.0,"paid":26567.0,"status":"Paid","valid":true},{"id":"FEE0341","batch":"2024-B","course":"Data Analytics","due":"2024-02-15","fee":64966.0,"paid":69918.0,"status":"Partial","valid":true},{"id":"FEE0109","batch":"2024-A","course":"HR Analytics","due":"2024-01-08","fee":45924.0,"paid":28004.0,"status":"Pending","valid":true},{"id":"FEE0274","batch":"2023-A","course":"Business Analytics","due":"2024-11-05","fee":23076.0,"paid":99887.0,"status":"Paid","valid":true},{"id":"FEE0004","batch":"2024-B","course":"Digital Marketing","due":"2024-06-14","fee":89822.0,"paid":10110.0,"status":"Pending","valid":true},{"id":"FEE0407","batch":"2023-A","course":"Business Analytics","due":"2023-03-30","fee":15022.0,"paid":101096.0,"status":"Paid","valid":true},{"id":"FEE0195","batch":"2023-A","course":"Digital Marketing","due":"2023-09-20","fee":107545.0,"paid":52669.0,"status":"Partial","valid":true},{"id":"FEE0083","batch":"2023-B","course":"HR Analytics","due":"2023-09-17","fee":106310.0,"paid":64471.0,"status":"Paid","valid":true},{"id":"FEE0262","batch":"2024-A","course":"Digital Marketing","due":"2023-03-28","fee":94453.0,"paid":29992.0,"status":"Paid","valid":true},{"id":"FEE0054","batch":"2023-B","course":"Digital Marketing","due":"2024-02-06","fee":103754.0,"paid":70385.0,"status":"Paid","valid":true},{"id":"FEE0261","batch":"2024-B","course":"HR Analytics","due":"2024-09-05","fee":110341.0,"paid":97869.0,"status":"Partial","valid":true},{"id":"FEE0085","batch":"2023-B","course":"Digital Marketing","due":"2024-06-18","fee":33676.0,"paid":92116.0,"status":"Partial","valid":true},{"id":"FEE0438","batch":"2024-A","course":"Digital Marketing","due":"2023-10-05","fee":75797.0,"paid":46629.0,"status":"Partial","valid":true},{"id":"FEE0180","batch":"2023-A","course":"HR Analytics","due":"2024-06-25","fee":108249.0,"paid":32099.0,"status":"Partial","valid":true},{"id":"FEE0495","batch":"2023-B","course":"Data Analytics","due":"2024-02-06","fee":28107.0,"paid":91288.0,"status":"Paid","valid":true},{"id":"FEE0230","batch":"2024-A","course":"Business Analytics","due":"2024-07-20","fee":103016.0,"paid":58013.0,"status":"Paid","valid":true},{"id":"FEE0432","batch":"2024-A","course":"Business Analytics","due":"2023-10-09","fee":86520.0,"paid":74727.0,"status":"Pending","valid":true},{"id":"FEE0234","batch":"2023-B","course":"Data Analytics","due":"2024-06-11","fee":110025.0,"paid":16650.0,"status":"Paid","valid":true},{"id":"FEE0075","batch":"2024-B","course":"Data Analytics","due":"2023-08-12","fee":90705.0,"paid":98756.0,"status":"Pending","valid":true},{"id":"FEE0466","batch":"2024-A","course":"Data Analytics","due":"2023-09-02","fee":15908.0,"paid":31276.0,"status":"Paid","valid":true},{"id":"FEE0413","batch":"2023-A","course":"HR Analytics","due":"2024-12-12","fee":24808.0,"paid":93012.0,"status":"Paid","valid":true},{"id":"FEE0497","batch":"2024-B","course":"Data Analytics","due":"2024-01-10","fee":109182.0,"paid":58122.0,"status":"Paid","valid":true},{"id":"FEE0491","batch":"2023-B","course":"Business Analytics","due":"2024-04-07","fee":null,"paid":42723.0,"status":"Paid","valid":false},{"id":"FEE0024","batch":"2023-A","course":"HR Analytics","due":"2023-01-20","fee":54293.0,"paid":99854.0,"status":"Paid","valid":true},{"id":"FEE0480","batch":"2023-B","course":"Digital Marketing","due":"2023-03-17","fee":115110.0,"paid":46281.0,"status":"Pending","valid":true},{"id":"FEE0155","batch":"2023-A","course":"Data Analytics","due":"2024-07-13","fee":117785.0,"paid":1225.0,"status":"Partial","valid":true},{"id":"FEE0434","batch":"2023-B","course":"HR Analytics","due":"2023-10-21","fee":62910.0,"paid":84983.0,"status":"Paid","valid":true},{"id":"FEE0192","batch":"2024-B","course":"Full Stack Dev","due":"2023-06-28","fee":49890.0,"paid":-58841.0,"status":"Partial","valid":false},{"id":"FEE0287","batch":"2023-A","course":"Full Stack Dev","due":"2024-07-31","fee":25346.0,"paid":68149.0,"status":"Paid","valid":true},{"id":"FEE0019","batch":"2023-A","course":"Business Analytics","due":"2023-11-03","fee":34455.0,"paid":75973.0,"status":"Paid","valid":true},{"id":"FEE0318","batch":"2024-A","course":"Data Analytics","due":"2023-01-12","fee":73745.0,"paid":72717.0,"status":"Partial","valid":true},{"id":"FEE0051","batch":"2023-B","course":"Digital Marketing","due":"2023-06-25","fee":29037.0,"paid":74095.0,"status":"Paid","valid":true},{"id":"FEE0039","batch":"2024-B","course":"Digital Marketing","due":"2023-04-01","fee":68205.0,"paid":15591.0,"status":"Paid","valid":true},{"id":"FEE0194","batch":"2023-B","course":"Full Stack Dev","due":"2023-02-21","fee":38466.0,"paid":395.0,"status":"Paid","valid":true},{"id":"FEE0418","batch":"2023-B","course":"Digital Marketing","due":"2023-03-14","fee":54950.0,"paid":73695.0,"status":"Partial","valid":true},{"id":"FEE0189","batch":"2023-A","course":"Data Analytics","due":"2024-08-03","fee":110149.0,"paid":58046.0,"status":"Pending","valid":true},{"id":"FEE0493","batch":"2023-A","course":"HR Analytics","due":"2023-10-05","fee":117136.0,"paid":46764.0,"status":"Partial","valid":true},{"id":"FEE0006","batch":"2023-B","course":"Full Stack Dev","due":null,"fee":110278.0,"paid":87091.0,"status":"Paid","valid":false},{"id":"FEE0076","batch":"2023-A","course":"Full Stack Dev","due":"2023-11-30","fee":-160580.0,"paid":10995.0,"status":"Paid","valid":false},{"id":"FEE0143","batch":"2023-B","course":"Business Analytics","due":"2024-12-17","fee":110347.0,"paid":24346.0,"status":"Pending","valid":true},{"id":"FEE0048","batch":"2024-A","course":"Data Analytics","due":"2024-09-06","fee":86713.0,"paid":13672.0,"status":"Partial","valid":true},{"id":"FEE0047","batch":"2023-A","course":"Data Analytics","due":"2023-04-26","fee":54015.0,"paid":19416.0,"status":"Pending","valid":true},{"id":"FEE0071","batch":"2024-B","course":"Business Analytics","due":"2024-11-19","fee":113383.0,"paid":50547.0,"status":"Partial","valid":true},{"id":"FEE0080","batch":"2024-B","course":"Data Analytics","due":"2024-10-28","fee":119956.0,"paid":5967.0,"status":"Pending","valid":true},{"id":"FEE0031","batch":"2024-B","course":"Data Analytics","due":"2023-12-14","fee":18404.0,"paid":111218.0,"status":"Partial","valid":true},{"id":"FEE0012","batch":"2024-B","course":"Digital Marketing","due":"2023-06-19","fee":67076.0,"paid":89301.0,"status":"Paid","valid":true},{"id":"FEE0358","batch":"2024-A","course":"Data Analytics","due":"2023-01-03","fee":60313.0,"paid":117529.0,"status":"Pending","valid":true},{"id":"FEE0482","batch":"2024-A","course":"Data Analytics","due":"2023-12-29","fee":482835.0,"paid":44852.0,"status":"Paid","valid":true},{"id":"FEE0454","batch":"2024-A","course":"Business Analytics","due":"2023-03-20","fee":29776.0,"paid":55598.0,"status":"Pending","valid":true},{"id":"FEE0269","batch":"2023-A","course":"Full Stack Dev","due":"2023-03-10","fee":74719.0,"paid":14219.0,"status":"Partial","valid":true},{"id":"FEE0116","batch":"2024-A","course":"HR Analytics","due":"2024-04-07","fee":113530.0,"paid":83969.0,"status":"Paid","valid":true},{"id":"FEE0026","batch":"2023-B","course":"HR Analytics","due":"2023-05-31","fee":103552.0,"paid":54649.0,"status":"Pending","valid":true},{"id":"FEE0447","batch":"2024-B","course":"Full Stack Dev","due":"2023-11-19","fee":37463.0,"paid":29022.0,"status":"Paid","valid":true},{"id":"FEE0196","batch":"2024-B","course":"HR Analytics","due":"2023-07-10","fee":65406.0,"paid":10845.0,"status":"Pending","valid":true},{"id":"FEE0385","batch":"2024-A","course":"Digital Marketing","due":"2024-11-03","fee":17925.0,"paid":103080.0,"status":"Partial","valid":true},{"id":"FEE0066","batch":"2024-B","course":"HR Analytics","due":"2023-02-28","fee":113231.0,"paid":10866.0,"status":"Paid","valid":true},{"id":"FEE0360","batch":"2023-A","course":"Business Analytics","due":"2024-09-22","fee":116711.0,"paid":110373.0,"status":"Paid","valid":true},{"id":"FEE0046","batch":"2024-A","course":"Business Analytics","due":"2024-12-02","fee":101173.0,"paid":110399.0,"status":"Partial","valid":true},{"id":"FEE0431","batch":"2024-A","course":"Business Analytics","due":"2023-11-14","fee":91289.0,"paid":17175.0,"status":"Paid","valid":true},{"id":"FEE0417","batch":"2023-B","course":"Data Analytics","due":"2024-09-03","fee":87534.0,"paid":65195.0,"status":"Paid","valid":true},{"id":"FEE0496","batch":"2024-A","course":"HR Analytics","due":"2024-11-16","fee":76404.0,"paid":19405.0,"status":"Paid","valid":true},{"id":"FEE0404","batch":"2023-A","course":"Data Analytics","due":"2023-03-05","fee":51181.0,"paid":87561.0,"status":"Paid","valid":true},{"id":"FEE0244","batch":"2024-A","course":"HR Analytics","due":"2023-11-05","fee":17682.0,"paid":82979.0,"status":"Paid","valid":true},{"id":"FEE0474","batch":"2023-B","course":"Business Analytics","due":"2023-12-27","fee":57103.0,"paid":55685.0,"status":"Paid","valid":true},{"id":"FEE0488","batch":"2023-B","course":"Data Analytics","due":"2023-03-22","fee":null,"paid":65283.0,"status":"Pending","valid":false},{"id":"FEE0267","batch":"2024-B","course":"Data Analytics","due":"2023-01-31","fee":25247.0,"paid":109068.0,"status":"Partial","valid":true},{"id":"FEE0069","batch":"2023-B","course":"HR Analytics","due":"2024-03-07","fee":33715.0,"paid":48226.0,"status":"Partial","valid":true},{"id":"FEE0022","batch":"2024-B","course":"Business Analytics","due":"2023-01-31","fee":86923.0,"paid":79794.0,"status":"Partial","valid":true},{"id":"FEE0078","batch":"2024-A","course":"Full Stack Dev","due":"2024-01-26","fee":102579.0,"paid":2631.0,"status":"Paid","valid":true},{"id":"FEE0306","batch":"2024-A","course":"Business Analytics","due":"2024-07-07","fee":50843.0,"paid":49979.0,"status":"Paid","valid":true},{"id":"FEE0450","batch":"2023-B","course":"Digital Marketing","due":"2024-12-09","fee":28686.0,"paid":1659.0,"status":"Paid","valid":true},{"id":"FEE0237","batch":"2024-B","course":"Data Analytics","due":"2024-05-22","fee":48639.0,"paid":7434.0,"status":"Pending","valid":true},{"id":"FEE0291","batch":"2023-B","course":"HR Analytics","due":"2023-05-02","fee":31108.0,"paid":105037.0,"status":"Pending","valid":true},{"id":"FEE0285","batch":"2024-A","course":"Business Analytics","due":"2023-02-04","fee":31352.0,"paid":22560.0,"status":"Partial","valid":true},{"id":"FEE0059","batch":"2024-B","course":"Digital Marketing","due":"2024-06-27","fee":105995.0,"paid":87594.0,"status":"Partial","valid":true},{"id":"FEE0126","batch":"2023-B","course":"Digital Marketing","due":"2023-05-16","fee":18199.0,"paid":52948.0,"status":"Paid","valid":true},{"id":"FEE0229","batch":"2024-A","course":"Data Analytics","due":"2023-11-25","fee":21928.0,"paid":52979.0,"status":"Paid","valid":true},{"id":"FEE0043","batch":"2023-A","course":"Data Analytics","due":"2023-01-03","fee":54643.0,"paid":47922.0,"status":"Pending","valid":true},{"id":"FEE0005","batch":"2023-B","course":"Business Analytics","due":"2024-10-17","fee":15045.0,"paid":105648.0,"status":"Paid","valid":true},{"id":"FEE0122","batch":"2024-B","course":"Full Stack Dev","due":null,"fee":39111.0,"paid":102208.0,"status":"Paid","valid":false},{"id":"FEE0169","batch":"2023-B","course":"Digital Marketing","due":"2023-06-05","fee":null,"paid":28475.0,"status":"Paid","valid":false},{"id":"FEE0141","batch":"2023-A","course":"Full Stack Dev","due":"2024-05-28","fee":29263.0,"paid":112704.0,"status":"Pending","valid":true},{"id":"FEE0314","batch":"2024-A","course":"Digital Marketing","due":"2024-11-14","fee":48043.0,"paid":78443.0,"status":"Paid","valid":true},{"id":"FEE0065","batch":"2024-B","course":"Digital Marketing","due":"2024-04-12","fee":64485.0,"paid":118294.0,"status":"Pending","valid":true},{"id":"FEE0425","batch":"2024-B","course":"Full Stack Dev","due":"2024-04-15","fee":72797.0,"paid":58951.0,"status":"Partial","valid":true},{"id":"FEE0110","batch":"2024-B","course":"Data Analytics","due":"2023-09-12","fee":25196.0,"paid":20471.0,"status":"Partial","valid":true},{"id":"FEE0281","batch":"2023-B","course":"Digital Marketing","due":"2023-11-09","fee":25236.0,"paid":9953.0,"status":"Partial","valid":true},{"id":"FEE0119","batch":"2023-A","course":"Digital Marketing","due":"2023-03-02","fee":66553.0,"paid":9466.0,"status":"Partial","valid":true},{"id":"FEE0206","batch":"2023-B","course":"Business Analytics","due":"2023-01-12","fee":60950.0,"paid":82971.0,"status":"Partial","valid":true},{"id":"FEE0499","batch":"2024-A","course":"Data Analytics","due":"2024-09-08","fee":30954.0,"paid":99489.0,"status":"Paid","valid":true},{"id":"FEE0007","batch":"2024-B","course":"Digital Marketing","due":"2024-04-10","fee":22758.0,"paid":16462.0,"status":"Partial","valid":true},{"id":"FEE0263","batch":"2024-A","course":"HR Analytics","due":"2023-06-08","fee":72737.0,"paid":63825.0,"status":"Partial","valid":true},{"id":"FEE0307","batch":"2024-A","course":"Business Analytics","due":"2024-03-21","fee":65808.0,"paid":25465.0,"status":"Paid","valid":true},{"id":"FEE0260","batch":"2023-B","course":"HR Analytics","due":"2023-07-14","fee":47788.0,"paid":94524.0,"status":"Paid","valid":true},{"id":"FEE0123","batch":"2024-A","course":"Full Stack Dev","due":"2024-10-26","fee":78083.0,"paid":15467.0,"status":"Pending","valid":true},{"id":"FEE0079","batch":"2023-B","course":"HR Analytics","due":"2024-10-07","fee":17124.0,"paid":34954.0,"status":"Partial","valid":true},{"id":"FEE0486","batch":"2023-A","course":"HR Analytics","due":"2023-12-21","fee":80563.0,"paid":95930.0,"status":"Partial","valid":true},{"id":"FEE0152","batch":"2024-B","course":"Business Analytics","due":"2024-12-19","fee":31417.0,"paid":21662.0,"status":"Paid","valid":true},{"id":"FEE0292","batch":"2023-B","course":"Data Analytics","due":"2023-01-18","fee":17853.0,"paid":102735.0,"status":"Partial","valid":true},{"id":"FEE0164","batch":"2024-A","course":"Digital Marketing","due":"2024-01-14","fee":56335.0,"paid":110359.0,"status":"Paid","valid":true},{"id":"FEE0266","batch":"2023-A","course":"Business Analytics","due":"2023-01-11","fee":43390.0,"paid":107006.0,"status":"Paid","valid":true},{"id":"FEE0377","batch":"2024-B","course":"Digital Marketing","due":"2024-05-17","fee":69479.0,"paid":70949.0,"status":"Paid","valid":true},{"id":"FEE0328","batch":"2024-B","course":"Data Analytics","due":"2023-12-11","fee":35662.0,"paid":33064.0,"status":"Paid","valid":true},{"id":"FEE0144","batch":"2023-B","course":"Data Analytics","due":"2024-06-29","fee":74660.0,"paid":74155.0,"status":"Partial","valid":true},{"id":"FEE0387","batch":"2024-B","course":"Business Analytics","due":"2024-05-08","fee":65272.0,"paid":6414.0,"status":"Partial","valid":true},{"id":"FEE0304","batch":"2023-A","course":"Full Stack Dev","due":"2024-08-28","fee":55667.0,"paid":97425.0,"status":"Pending","valid":true},{"id":"FEE0200","batch":"2024-A","course":"Business Analytics","due":"2023-07-08","fee":28665.0,"paid":45906.0,"status":"Partial","valid":true},{"id":"FEE0042","batch":"2023-B","course":"Full Stack Dev","due":"2024-07-06","fee":20400.0,"paid":7970.0,"status":"Paid","valid":true},{"id":"FEE0460","batch":null,"course":"HR Analytics","due":"2024-12-05","fee":78308.0,"paid":55916.0,"status":"Paid","valid":false},{"id":"FEE0405","batch":"2023-B","course":"HR Analytics","due":"2023-08-20","fee":48262.0,"paid":27503.0,"status":"Paid","valid":true},{"id":"FEE0349","batch":"2023-B","course":"Digital Marketing","due":"2024-06-30","fee":33261.0,"paid":70605.0,"status":"Paid","valid":true},{"id":"FEE0232","batch":"2023-B","course":"HR Analytics","due":"2024-02-14","fee":null,"paid":63797.0,"status":"Paid","valid":false},{"id":"FEE0246","batch":"2024-A","course":"Business Analytics","due":"2023-09-10","fee":null,"paid":4123.0,"status":"Partial","valid":false},{"id":"FEE0382","batch":"2024-B","course":"Business Analytics","due":"2023-11-22","fee":83731.0,"paid":81662.0,"status":"Paid","valid":true},{"id":"FEE0489","batch":"2023-B","course":"HR Analytics","due":null,"fee":54823.0,"paid":92676.0,"status":"Paid","valid":false},{"id":"FEE0320","batch":"2023-B","course":"Digital Marketing","due":"2024-09-27","fee":77077.0,"paid":12875.0,"status":"Paid","valid":true},{"id":"FEE0264","batch":"2023-A","course":"Digital Marketing","due":"2023-05-10","fee":61489.0,"paid":9522.0,"status":"Paid","valid":true},{"id":"FEE0030","batch":"2024-A","course":"HR Analytics","due":"2024-08-16","fee":96638.0,"paid":102055.0,"status":"Pending","valid":true},{"id":"FEE0239","batch":"2023-A","course":"HR Analytics","due":"2024-09-17","fee":75598.0,"paid":66558.0,"status":"Paid","valid":true},{"id":"FEE0251","batch":"2024-B","course":"Data Analytics","due":null,"fee":78043.0,"paid":84238.0,"status":"Paid","valid":false},{"id":"FEE0163","batch":"2024-A","course":"Full Stack Dev","due":"2024-06-14","fee":22771.0,"paid":54240.0,"status":"Paid","valid":true},{"id":"FEE0150","batch":"2024-A","course":"Full Stack Dev","due":"2023-09-06","fee":22235.0,"paid":44293.0,"status":"Paid","valid":true},{"id":"FEE0383","batch":"2024-A","course":"Data Analytics","due":"2023-08-19","fee":105987.0,"paid":105056.0,"status":"Paid","valid":true},{"id":"FEE0379","batch":"2023-B","course":"Data Analytics","due":"2023-05-04","fee":95934.0,"paid":104059.0,"status":"Paid","valid":true},{"id":"FEE0095","batch":"2023-B","course":"Digital Marketing","due":"2023-05-27","fee":87976.0,"paid":54348.0,"status":"Partial","valid":true},{"id":"FEE0222","batch":"2023-B","course":"HR Analytics","due":"2024-11-04","fee":106238.0,"paid":49107.0,"status":"Partial","valid":true},{"id":"FEE0086","batch":"2023-B","course":"HR Analytics","due":"2024-11-27","fee":60177.0,"paid":34227.0,"status":"Partial","valid":true},{"id":"FEE0188","batch":"2024-B","course":"Business Analytics","due":"2023-11-14","fee":111572.0,"paid":101611.0,"status":"Paid","valid":true},{"id":"FEE0090","batch":"2024-B","course":"Full Stack Dev","due":"2023-07-02","fee":58769.0,"paid":87342.0,"status":"Partial","valid":true},{"id":"FEE0326","batch":"2024-B","course":"Business Analytics","due":"2023-07-07","fee":57840.0,"paid":6457.0,"status":"Paid","valid":true},{"id":"FEE0035","batch":"2024-B","course":"Business Analytics","due":"2024-10-24","fee":95731.0,"paid":86379.0,"status":"Partial","valid":true},{"id":"FEE0218","batch":"2024-B","course":"HR Analytics","due":"2024-01-22","fee":118917.0,"paid":24398.0,"status":"Paid","valid":true},{"id":"FEE0073","batch":"2023-B","course":"HR Analytics","due":"2023-10-15","fee":107943.0,"paid":89449.0,"status":"Partial","valid":true},{"id":"FEE0221","batch":"2023-A","course":"Data Analytics","due":"2024-09-07","fee":104023.0,"paid":75801.0,"status":"Paid","valid":true},{"id":"FEE0463","batch":"2024-A","course":"HR Analytics","due":"2023-04-02","fee":20302.0,"paid":13123.0,"status":"Paid","valid":true},{"id":"FEE0472","batch":"2023-B","course":"Full Stack Dev","due":"2023-03-22","fee":42313.0,"paid":91043.0,"status":"Partial","valid":true},{"id":"FEE0013","batch":"2024-A","course":"Full Stack Dev","due":"2024-09-07","fee":71950.0,"paid":51224.0,"status":"Partial","valid":true},{"id":"FEE0199","batch":"2023-A","course":"Business Analytics","due":"2024-02-01","fee":119646.0,"paid":93993.0,"status":"Partial","valid":true},{"id":"FEE0214","batch":"2023-A","course":"Digital Marketing","due":"2024-02-22","fee":65064.0,"paid":8539.0,"status":"Paid","valid":true},{"id":"FEE0445","batch":"2023-A","course":"Data Analytics","due":"2023-05-12","fee":22750.0,"paid":68513.0,"status":"Pending","valid":true},{"id":"FEE0235","batch":"2024-B","course":"Full Stack Dev","due":"2024-04-20","fee":58832.0,"paid":26014.0,"status":"Partial","valid":true},{"id":"FEE0487","batch":"2024-B","course":"Data Analytics","due":"2024-07-11","fee":23660.0,"paid":15402.0,"status":"Pending","valid":true},{"id":"FEE0492","batch":"2024-A","course":"Digital Marketing","due":"2023-09-24","fee":90976.0,"paid":51322.0,"status":"Partial","valid":true},{"id":"FEE0395","batch":"2024-B","course":"HR Analytics","due":"2024-05-23","fee":99083.0,"paid":33948.0,"status":"Paid","valid":true},{"id":"FEE0097","batch":"2024-A","course":"Digital Marketing","due":"2023-06-16","fee":70965.0,"paid":17878.0,"status":"Paid","valid":true},{"id":"FEE0322","batch":"2023-B","course":"Digital Marketing","due":"2024-10-26","fee":26573.0,"paid":36182.0,"status":"Paid","valid":true},{"id":"FEE0298","batch":"2023-B","course":"Data Analytics","due":"2023-06-05","fee":21829.0,"paid":106073.0,"status":"Paid","valid":true},{"id":"FEE0064","batch":"2023-A","course":"Business Analytics","due":"2023-05-03","fee":27683.0,"paid":64274.0,"status":"Partial","valid":true},{"id":"FEE0223","batch":"2023-A","course":"Full Stack Dev","due":"2023-06-08","fee":712000.0,"paid":32152.0,"status":"Paid","valid":true},{"id":"FEE0096","batch":"2023-A","course":"HR Analytics","due":null,"fee":100447.0,"paid":81981.0,"status":"Partial","valid":false},{"id":"FEE0014","batch":"2024-A","course":"Data Analytics","due":"2024-02-29","fee":32349.0,"paid":56063.0,"status":"Pending","valid":true},{"id":"FEE0018","batch":"2023-B","course":"Digital Marketing","due":"2023-10-31","fee":116280.0,"paid":17868.0,"status":"Partial","valid":true},{"id":"FEE0367","batch":"2024-B","course":"Business Analytics","due":"2023-12-08","fee":63821.0,"paid":67474.0,"status":"Pending","valid":true},{"id":"FEE0247","batch":"2024-B","course":"Full Stack Dev","due":"2023-09-18","fee":31997.0,"paid":16603.0,"status":"Paid","valid":true},{"id":"FEE0393","batch":"2024-B","course":"Business Analytics","due":"2023-01-14","fee":99816.0,"paid":98829.0,"status":"Paid","valid":true},{"id":"FEE0208","batch":"2024-B","course":"Full Stack Dev","due":"2024-03-02","fee":117339.0,"paid":39386.0,"status":"Partial","valid":true},{"id":"FEE0091","batch":"2023-A","course":"Data Analytics","due":"2023-01-12","fee":117968.0,"paid":14407.0,"status":"Paid","valid":true},{"id":"FEE0308","batch":"2024-A","course":"Digital Marketing","due":"2024-10-21","fee":null,"paid":53900.0,"status":"Pending","valid":false},{"id":"FEE0335","batch":"2023-B","course":"HR Analytics","due":"2024-09-15","fee":106788.0,"paid":29281.0,"status":"Pending","valid":true},{"id":"FEE0365","batch":"2023-A","course":"Data Analytics","due":"2024-03-16","fee":110326.0,"paid":9117.0,"status":"Paid","valid":true},{"id":"FEE0040","batch":"2024-A","course":"Data Analytics","due":"2023-03-19","fee":52569.0,"paid":71718.0,"status":"Paid","valid":true},{"id":"FEE0087","batch":"2024-B","course":"Full Stack Dev","due":"2024-05-11","fee":105296.0,"paid":1942.0,"status":"Paid","valid":true},{"id":"FEE0182","batch":"2023-B","course":"Digital Marketing","due":"2023-10-18","fee":-174975.0,"paid":109382.0,"status":"Pending","valid":false},{"id":"FEE0412","batch":"2024-A","course":"Digital Marketing","due":"2023-05-31","fee":96696.0,"paid":100989.0,"status":"Partial","valid":true},{"id":"FEE0146","batch":"2023-A","course":"HR Analytics","due":"2024-01-12","fee":78379.0,"paid":104414.0,"status":"Pending","valid":true},{"id":"FEE0159","batch":"2024-A","course":"Business Analytics","due":"2024-08-06","fee":102218.0,"paid":17279.0,"status":"Partial","valid":true},{"id":"FEE0410","batch":"2023-B","course":"Business Analytics","due":"2023-07-03","fee":47322.0,"paid":98318.0,"status":"Paid","valid":true},{"id":"FEE0371","batch":"2023-B","course":"HR Analytics","due":"2024-10-19","fee":22248.0,"paid":20128.0,"status":"Pending","valid":true},{"id":"FEE0372","batch":"2024-B","course":"HR Analytics","due":"2023-10-25","fee":19369.0,"paid":97317.0,"status":"Paid","valid":true},{"id":"FEE0355","batch":"2024-B","course":"Data Analytics","due":"2024-01-09","fee":87322.0,"paid":27460.0,"status":"Paid","valid":true},{"id":"FEE0201","batch":"2023-A","course":"Data Analytics","due":"2023-06-19","fee":117434.0,"paid":59332.0,"status":"Partial","valid":true},{"id":"FEE0293","batch":"2023-B","course":"Full Stack Dev","due":"2023-07-29","fee":99156.0,"paid":24496.0,"status":"Paid","valid":true},{"id":"FEE0072","batch":"2024-B","course":"Digital Marketing","due":"2023-09-28","fee":117067.0,"paid":26162.0,"status":"Partial","valid":true},{"id":"FEE0386","batch":"2023-B","course":"Business Analytics","due":"2023-07-18","fee":95051.0,"paid":7038.0,"status":"Paid","valid":true},{"id":"FEE0421","batch":"2024-A","course":"Digital Marketing","due":"2024-06-12","fee":35557.0,"paid":39142.0,"status":"Paid","valid":true},{"id":"FEE0368","batch":"2024-A","course":"HR Analytics","due":"2024-05-06","fee":43365.0,"paid":93926.0,"status":"Paid","valid":true},{"id":"FEE0397","batch":"2023-A","course":"Business Analytics","due":"2024-05-22","fee":null,"paid":91801.0,"status":"Partial","valid":false},{"id":"FEE0484","batch":"2024-A","course":"Data Analytics","due":"2023-01-02","fee":25967.0,"paid":47836.0,"status":"Paid","valid":true},{"id":"FEE0469","batch":"2024-A","course":"Full Stack Dev","due":"2024-07-05","fee":27877.0,"paid":81049.0,"status":"Pending","valid":true},{"id":"FEE0392","batch":"2023-A","course":"Business Analytics","due":"2023-04-10","fee":70779.0,"paid":16482.0,"status":"Paid","valid":true},{"id":"FEE0134","batch":"2024-B","course":"HR Analytics","due":"2023-02-13","fee":118462.0,"paid":10683.0,"status":"Paid","valid":true},{"id":"FEE0061","batch":"2024-B","course":"HR Analytics","due":"2023-01-18","fee":71879.0,"paid":116916.0,"status":"Paid","valid":true},{"id":"FEE0433","batch":"2023-B","course":"HR Analytics","due":"2024-04-04","fee":33895.0,"paid":65687.0,"status":"Pending","valid":true},{"id":"FEE0485","batch":"2024-A","course":"Digital Marketing","due":"2023-12-19","fee":96991.0,"paid":4595.0,"status":"Partial","valid":true},{"id":"FEE0101","batch":"2023-A","course":"Data Analytics","due":null,"fee":107693.0,"paid":101092.0,"status":"Partial","valid":false},{"id":"FEE0020","batch":"2024-A","course":"Data Analytics","due":"2024-06-23","fee":93824.0,"paid":80989.0,"status":"Paid","valid":true},{"id":"FEE0389","batch":"2024-B","course":"Business Analytics","due":"2024-09-25","fee":46817.0,"paid":69506.0,"status":"Partial","valid":true},{"id":"FEE0468","batch":"2023-B","course":"HR Analytics","due":"2023-06-20","fee":95659.0,"paid":46619.0,"status":"Pending","valid":true},{"id":"FEE0265","batch":"2024-B","course":"HR Analytics","due":"2024-02-17","fee":86303.0,"paid":45406.0,"status":"Paid","valid":true},{"id":"FEE0277","batch":"2023-A","course":"Data Analytics","due":"2024-02-13","fee":19314.0,"paid":55735.0,"status":"Partial","valid":true},{"id":"FEE0009","batch":"2023-B","course":"Data Analytics","due":"2024-02-16","fee":34585.0,"paid":54081.0,"status":"Pending","valid":true},{"id":"FEE0310","batch":"2023-A","course":"Data Analytics","due":"2024-11-18","fee":21611.0,"paid":117021.0,"status":"Paid","valid":true},{"id":"FEE0284","batch":null,"course":"Data Analytics","due":"2023-08-21","fee":null,"paid":62708.0,"status":"Paid","valid":false},{"id":"FEE0478","batch":"2024-B","course":"Full Stack Dev","due":"2023-02-07","fee":106665.0,"paid":19362.0,"status":"Paid","valid":true},{"id":"FEE0093","batch":"2024-B","course":"Business Analytics","due":"2024-11-08","fee":26231.0,"paid":59201.0,"status":"Paid","valid":true},{"id":"FEE0253","batch":"2024-B","course":"HR Analytics","due":"2024-09-14","fee":60520.0,"paid":91786.0,"status":"Paid","valid":true},{"id":"FEE0033","batch":"2024-B","course":"Full Stack Dev","due":"2023-07-08","fee":115647.0,"paid":48166.0,"status":"Paid","valid":true},{"id":"FEE0136","batch":"2024-B","course":"Data Analytics","due":"2023-12-30","fee":60612.0,"paid":59819.0,"status":"Paid","valid":true},{"id":"FEE0023","batch":"2023-A","course":"HR Analytics","due":"2024-11-07","fee":115825.0,"paid":63924.0,"status":"Partial","valid":true},{"id":"FEE0063","batch":"2024-A","course":"Data Analytics","due":"2024-10-01","fee":44756.0,"paid":64666.0,"status":"Pending","valid":true},{"id":"FEE0490","batch":"2023-B","course":"Data Analytics","due":"2023-11-25","fee":70842.0,"paid":88131.0,"status":"Pending","valid":true},{"id":"FEE0216","batch":"2023-B","course":"Full Stack Dev","due":"2023-07-13","fee":33095.0,"paid":13305.0,"status":"Pending","valid":true},{"id":"FEE0420","batch":"2023-A","course":"Business Analytics","due":"2023-07-23","fee":98576.0,"paid":102404.0,"status":"Paid","valid":true},{"id":"FEE0426","batch":"2024-B","course":"Business Analytics","due":"2023-02-11","fee":30802.0,"paid":11755.0,"status":"Paid","valid":true},{"id":"FEE0258","batch":"2024-A","course":"HR Analytics","due":"2024-09-09","fee":76477.0,"paid":110329.0,"status":"Paid","valid":true},{"id":"FEE0053","batch":"2023-A","course":"Full Stack Dev","due":"2024-02-20","fee":31167.0,"paid":68835.0,"status":"Partial","valid":true},{"id":"FEE0416","batch":"2024-A","course":"Digital Marketing","due":"2024-08-20","fee":36725.0,"paid":31419.0,"status":"Paid","valid":true},{"id":"FEE0174","batch":"2023-B","course":"Data Analytics","due":"2023-02-09","fee":68740.0,"paid":96669.0,"status":"Pending","valid":true},{"id":"FEE0036","batch":"2023-A","course":"Full Stack Dev","due":"2024-04-23","fee":61009.0,"paid":69392.0,"status":"Partial","valid":true},{"id":"FEE0179","batch":"2023-A","course":"Full Stack Dev","due":"2024-10-01","fee":25057.0,"paid":25168.0,"status":"Pending","valid":true},{"id":"FEE0168","batch":"2024-A","course":"Business Analytics","due":"2024-02-25","fee":117601.0,"paid":48481.0,"status":"Paid","valid":true},{"id":"FEE0227","batch":"2023-A","course":"Business Analytics","due":"2023-09-11","fee":65117.0,"paid":56132.0,"status":"Pending","valid":true},{"id":"FEE0121","batch":"2024-B","course":"HR Analytics","due":"2024-09-16","fee":118976.0,"paid":57324.0,"status":"Paid","valid":true},{"id":"FEE0276","batch":"2023-A","course":"Data Analytics","due":"2024-04-22","fee":30051.0,"paid":106292.0,"status":"Partial","valid":true},{"id":"FEE0045","batch":"2024-B","course":"Digital Marketing","due":"2024-08-29","fee":111032.0,"paid":30755.0,"status":"Paid","valid":true},{"id":"FEE0301","batch":"2023-B","course":"Digital Marketing","due":"2024-04-26","fee":105666.0,"paid":13727.0,"status":"Pending","valid":true},{"id":"FEE0325","batch":"2023-B","course":"HR Analytics","due":"2024-06-15","fee":39464.0,"paid":79781.0,"status":"Paid","valid":true},{"id":"FEE0077","batch":"2023-B","course":"HR Analytics","due":"2024-09-01","fee":51744.0,"paid":56488.0,"status":"Paid","valid":true},{"id":"FEE0209","batch":"2023-B","course":"Data Analytics","due":"2024-02-12","fee":116203.0,"paid":103027.0,"status":"Paid","valid":true},{"id":"FEE0369","batch":"2023-A","course":"Data Analytics","due":"2023-06-06","fee":28189.0,"paid":44322.0,"status":"Paid","valid":true},{"id":"FEE0213","batch":"2023-B","course":"Full Stack Dev","due":"2024-08-20","fee":28222.0,"paid":113141.0,"status":"Pending","valid":true},{"id":"FEE0268","batch":"2024-A","course":"Full Stack Dev","due":"2023-01-05","fee":84051.0,"paid":12121.0,"status":"Paid","valid":true},{"id":"FEE0312","batch":"2024-A","course":"HR Analytics","due":"2023-11-01","fee":99612.0,"paid":21330.0,"status":"Paid","valid":true},{"id":"FEE0217","batch":"2024-A","course":"Full Stack Dev","due":"2023-12-20","fee":16439.0,"paid":53817.0,"status":"Paid","valid":true},{"id":"FEE0440","batch":"2023-B","course":"Business Analytics","due":null,"fee":98137.0,"paid":47800.0,"status":"Partial","valid":false},{"id":"FEE0010","batch":"2024-A","course":"Digital Marketing","due":"2023-06-03","fee":113759.0,"paid":52799.0,"status":"Partial","valid":true},{"id":"FEE0409","batch":"2024-A","course":"Full Stack Dev","due":"2024-11-10","fee":94522.0,"paid":46612.0,"status":"Paid","valid":true},{"id":"FEE0428","batch":"2024-A","course":"Data Analytics","due":"2023-11-02","fee":115628.0,"paid":84553.0,"status":"Paid","valid":true},{"id":"FEE0286","batch":"2023-B","course":"Full Stack Dev","due":"2023-10-19","fee":60650.0,"paid":58390.0,"status":"Partial","valid":true},{"id":"FEE0296","batch":"2023-B","course":"HR Analytics","due":"2024-05-22","fee":40920.0,"paid":3515.0,"status":"Paid","valid":true},{"id":"FEE0105","batch":"2024-B","course":"Digital Marketing","due":"2023-04-03","fee":19090.0,"paid":119409.0,"status":"Paid","valid":true},{"id":"FEE0313","batch":"2024-A","course":"HR Analytics","due":"2023-06-13","fee":61902.0,"paid":8302.0,"status":"Paid","valid":true},{"id":"FEE0439","batch":null,"course":"Data Analytics","due":"2024-05-20","fee":116559.0,"paid":116779.0,"status":"Pending","valid":false},{"id":"FEE0500","batch":"2024-B","course":"Business Analytics","due":"2024-11-13","fee":31943.0,"paid":101589.0,"status":"Partial","valid":true},{"id":"FEE0092","batch":"2024-A","course":"Data Analytics","due":"2023-10-30","fee":93653.0,"paid":-113926.0,"status":"Partial","valid":false},{"id":"FEE0183","batch":"2024-B","course":"Business Analytics","due":"2024-08-22","fee":117004.0,"paid":61455.0,"status":"Paid","valid":true},{"id":"FEE0316","batch":"2023-B","course":"HR Analytics","due":"2023-05-19","fee":87867.0,"paid":107288.0,"status":"Pending","valid":true},{"id":"FEE0461","batch":"2024-A","course":"Business Analytics","due":"2024-07-24","fee":30797.0,"paid":17600.0,"status":"Pending","valid":true},{"id":"FEE0173","batch":"2023-B","course":"Full Stack Dev","due":"2024-03-14","fee":72042.0,"paid":109879.0,"status":"Paid","valid":true},{"id":"FEE0233","batch":"2023-B","course":"Business Analytics","due":"2024-07-23","fee":55888.0,"paid":51798.0,"status":"Paid","valid":true},{"id":"FEE0483","batch":"2023-B","course":"Full Stack Dev","due":"2024-06-05","fee":101067.0,"paid":111653.0,"status":"Paid","valid":true},{"id":"FEE0037","batch":"2023-B","course":"HR Analytics","due":"2024-10-08","fee":107689.0,"paid":59526.0,"status":"Partial","valid":true},{"id":"FEE0157","batch":"2023-B","course":"HR Analytics","due":"2023-05-02","fee":38645.0,"paid":69786.0,"status":"Paid","valid":true},{"id":"FEE0003","batch":null,"course":"HR Analytics","due":"2023-02-02","fee":19747.0,"paid":85751.0,"status":"Partial","valid":false},{"id":"FEE0243","batch":"2023-B","course":"Digital Marketing","due":null,"fee":92722.0,"paid":46326.0,"status":"Paid","valid":false},{"id":"FEE0309","batch":"2023-A","course":"Digital Marketing","due":"2023-12-02","fee":87780.0,"paid":59799.0,"status":"Pending","valid":true},{"id":"FEE0290","batch":"2023-A","course":"Business Analytics","due":"2023-11-04","fee":29035.0,"paid":57805.0,"status":"Paid","valid":true},{"id":"FEE0049","batch":"2024-A","course":"Data Analytics","due":null,"fee":87805.0,"paid":83468.0,"status":"Paid","valid":false},{"id":"FEE0415","batch":"2023-A","course":"Full Stack Dev","due":"2024-09-28","fee":67882.0,"paid":9428.0,"status":"Partial","valid":true},{"id":"FEE0142","batch":null,"course":"Digital Marketing","due":"2023-03-23","fee":85935.0,"paid":62744.0,"status":"Paid","valid":false},{"id":"FEE0224","batch":"2024-B","course":"Digital Marketing","due":"2024-08-25","fee":17466.0,"paid":93260.0,"status":"Partial","valid":true},{"id":"FEE0353","batch":"2023-A","course":"HR Analytics","due":"2024-04-30","fee":81330.0,"paid":7704.0,"status":"Paid","valid":true},{"id":"FEE0184","batch":"2024-A","course":"HR Analytics","due":"2023-03-17","fee":106628.0,"paid":54240.0,"status":"Partial","valid":true},{"id":"FEE0332","batch":"2024-A","course":"HR Analytics","due":"2024-05-11","fee":22386.0,"paid":103587.0,"status":"Pending","valid":true},{"id":"FEE0479","batch":"2023-B","course":"Business Analytics","due":"2024-09-11","fee":25534.0,"paid":54499.0,"status":"Partial","valid":true},{"id":"FEE0430","batch":"2023-B","course":"Full Stack Dev","due":"2023-10-28","fee":28338.0,"paid":94376.0,"status":"Partial","valid":true},{"id":"FEE0161","batch":"2024-A","course":"Digital Marketing","due":"2024-05-25","fee":77233.0,"paid":95729.0,"status":"Paid","valid":true},{"id":"FEE0337","batch":"2024-A","course":"Digital Marketing","due":"2024-09-29","fee":95140.0,"paid":31821.0,"status":"Paid","valid":true},{"id":"FEE0401","batch":"2024-A","course":"Digital Marketing","due":"2023-03-17","fee":92112.0,"paid":32400.0,"status":"Paid","valid":true},{"id":"FEE0220","batch":"2023-B","course":"Digital Marketing","due":"2024-08-27","fee":20375.0,"paid":97616.0,"status":"Paid","valid":true},{"id":"FEE0100","batch":"2024-A","course":"HR Analytics","due":"2023-08-09","fee":76517.0,"paid":55420.0,"status":"Pending","valid":true},{"id":"FEE0381","batch":null,"course":"Digital Marketing","due":"2023-06-17","fee":48055.0,"paid":19547.0,"status":"Partial","valid":false},{"id":"FEE0236","batch":"2023-B","course":"HR Analytics","due":"2024-12-28","fee":24404.0,"paid":76421.0,"status":"Partial","valid":true},{"id":"FEE0452","batch":"2023-B","course":"Digital Marketing","due":"2024-02-28","fee":114811.0,"paid":37930.0,"status":"Paid","valid":true},{"id":"FEE0118","batch":"2024-B","course":"Digital Marketing","due":"2024-12-22","fee":63795.0,"paid":110960.0,"status":"Paid","valid":true},{"id":"FEE0342","batch":"2024-A","course":"HR Analytics","due":"2023-05-09","fee":69774.0,"paid":81985.0,"status":"Paid","valid":true},{"id":"FEE0002","batch":"2024-B","course":"Business Analytics","due":"2024-07-06","fee":59788.0,"paid":45434.0,"status":"Paid","valid":true},{"id":"FEE0114","batch":"2024-A","course":"Full Stack Dev","due":"2023-09-30","fee":100177.0,"paid":83828.0,"status":"Paid","valid":true},{"id":"FEE0464","batch":"2023-A","course":"HR Analytics","due":"2024-05-09","fee":78172.0,"paid":3811.0,"status":"Pending","valid":true},{"id":"FEE0175","batch":"2023-B","course":"HR Analytics","due":"2024-01-26","fee":80873.0,"paid":99605.0,"status":"Partial","valid":true},{"id":"FEE0254","batch":"2024-A","course":"Data Analytics","due":"2023-09-10","fee":77919.0,"paid":41751.0,"status":"Paid","valid":true},{"id":"FEE0446","batch":"2024-B","course":"Full Stack Dev","due":"2023-08-19","fee":109929.0,"paid":82762.0,"status":"Partial","valid":true},{"id":"FEE0048","batch":"2024-A","course":"Data Analytics","due":"2024-09-06","fee":86713.0,"paid":13672.0,"status":"Partial","valid":true},{"id":"FEE0185","batch":"2024-B","course":"Business Analytics","due":"2023-05-13","fee":92681.0,"paid":74796.0,"status":"Partial","valid":true},{"id":"FEE0166","batch":"2023-B","course":"Digital Marketing","due":"2024-12-30","fee":94434.0,"paid":38187.0,"status":"Pending","valid":true},{"id":"FEE0373","batch":"2024-B","course":"Data Analytics","due":"2023-01-07","fee":78763.0,"paid":69001.0,"status":"Pending","valid":true},{"id":"FEE0275","batch":"2023-B","course":"Business Analytics","due":"2024-12-16","fee":33006.0,"paid":72240.0,"status":"Paid","valid":true},{"id":"FEE0193","batch":"2023-A","course":"Business Analytics","due":"2023-05-19","fee":92513.0,"paid":118521.0,"status":"Paid","valid":true},{"id":"FEE0001","batch":"2023-B","course":"Digital Marketing","due":"2024-10-06","fee":42289.0,"paid":40725.0,"status":"Paid","valid":true},{"id":"FEE0055","batch":"2023-B","course":"Business Analytics","due":"2023-05-16","fee":105703.0,"paid":5639.0,"status":"Paid","valid":true},{"id":"FEE0376","batch":"2023-A","course":"Digital Marketing","due":"2023-11-11","fee":64616.0,"paid":49613.0,"status":"Partial","valid":true},{"id":"FEE0029","batch":"2023-A","course":"HR Analytics","due":"2024-11-06","fee":45215.0,"paid":83749.0,"status":"Paid","valid":true},{"id":"FEE0207","batch":"2024-B","course":"HR Analytics","due":"2024-01-29","fee":40046.0,"paid":51993.0,"status":"Paid","valid":true},{"id":"FEE0384","batch":"2024-B","course":"HR Analytics","due":"2023-03-16","fee":22450.0,"paid":5.0,"status":"Paid","valid":true},{"id":"FEE0494","batch":"2023-A","course":"Full Stack Dev","due":"2024-09-26","fee":63738.0,"paid":24911.0,"status":"Paid","valid":true},{"id":"FEE0050","batch":"2024-B","course":"Business Analytics","due":"2023-04-23","fee":29974.0,"paid":46996.0,"status":"Paid","valid":true},{"id":"FEE0351","batch":"2024-B","course":"Business Analytics","due":"2023-01-05","fee":101755.0,"paid":44440.0,"status":"Paid","valid":true},{"id":"FEE0021","batch":"2023-A","course":"Data Analytics","due":"2023-12-01","fee":69021.0,"paid":22222.0,"status":"Partial","valid":true},{"id":"FEE0294","batch":"2024-A","course":"Digital Marketing","due":"2024-06-12","fee":19176.0,"paid":83301.0,"status":"Partial","valid":true},{"id":"FEE0177","batch":"2023-B","course":"Digital Marketing","due":"2024-04-19","fee":38450.0,"paid":74486.0,"status":"Partial","valid":true},{"id":"FEE0336","batch":"2024-A","course":"Full Stack Dev","due":"2023-04-15","fee":90023.0,"paid":105815.0,"status":"Partial","valid":true},{"id":"FEE0380","batch":"2024-B","course":"HR Analytics","due":"2024-12-28","fee":55883.0,"paid":103316.0,"status":"Paid","valid":true},{"id":"FEE0034","batch":"2023-B","course":"Data Analytics","due":"2024-10-18","fee":80642.0,"paid":39369.0,"status":"Pending","valid":true},{"id":"FEE0172","batch":"2023-A","course":"Full Stack Dev","due":"2023-08-25","fee":98251.0,"paid":76534.0,"status":"Paid","valid":true},{"id":"FEE0008","batch":"2023-A","course":"Data Analytics","due":"2023-06-13","fee":38437.0,"paid":79232.0,"status":"Pending","valid":true},{"id":"FEE0319","batch":"2023-B","course":"Business Analytics","due":"2023-12-04","fee":111876.0,"paid":111749.0,"status":"Partial","valid":true},{"id":"FEE0107","batch":"2024-B","course":"Digital Marketing","due":"2023-08-17","fee":55239.0,"paid":89622.0,"status":"Partial","valid":true},{"id":"FEE0414","batch":"2024-A","course":"Business Analytics","due":"2023-12-08","fee":110148.0,"paid":81748.0,"status":"Paid","valid":true},{"id":"FEE0098","batch":"2024-A","course":"Digital Marketing","due":"2024-11-04","fee":96144.0,"paid":83100.0,"status":"Paid","valid":true},{"id":"FEE0111","batch":"2024-B","course":"Data Analytics","due":"2023-01-10","fee":106815.0,"paid":91820.0,"status":"Partial","valid":true},{"id":"FEE0361","batch":"2023-A","course":"Digital Marketing","due":null,"fee":42032.0,"paid":6565.0,"status":"Partial","valid":false},{"id":"FEE0070","batch":"2023-A","course":"Data Analytics","due":"2023-07-19","fee":85097.0,"paid":31335.0,"status":"Partial","valid":true},{"id":"FEE0347","batch":"2023-A","course":"Digital Marketing","due":"2024-01-14","fee":87197.0,"paid":27603.0,"status":"Partial","valid":true},{"id":"FEE0436","batch":"2023-B","course":"HR Analytics","due":"2024-09-15","fee":18454.0,"paid":94711.0,"status":"Partial","valid":true},{"id":"FEE0130","batch":"2023-B","course":"HR Analytics","due":null,"fee":22897.0,"paid":108718.0,"status":"Partial","valid":false},{"id":"FEE0317","batch":"2024-B","course":"HR Analytics","due":"2023-10-31","fee":92089.0,"paid":112689.0,"status":"Paid","valid":true},{"id":"FEE0448","batch":"2024-B","course":"Business Analytics","due":"2023-03-09","fee":89935.0,"paid":69329.0,"status":"Paid","valid":true},{"id":"FEE0259","batch":"2024-A","course":"Full Stack Dev","due":"2024-06-24","fee":15244.0,"paid":37697.0,"status":"Paid","valid":true},{"id":"FEE0323","batch":"2023-B","course":"HR Analytics","due":"2023-06-04","fee":36409.0,"paid":80541.0,"status":"Pending","valid":true},{"id":"FEE0151","batch":"2024-B","course":"Data Analytics","due":"2024-02-14","fee":103757.0,"paid":61336.0,"status":"Pending","valid":true},{"id":"FEE0475","batch":"2023-A","course":"Data Analytics","due":"2024-01-28","fee":63408.0,"paid":12194.0,"status":"Paid","valid":true},{"id":"FEE0338","batch":"2023-A","course":"Business Analytics","due":"2023-09-25","fee":97963.0,"paid":103769.0,"status":"Paid","valid":true},{"id":"FEE0027","batch":"2023-A","course":"Data Analytics","due":"2024-06-12","fee":61116.0,"paid":102986.0,"status":"Partial","valid":true},{"id":"FEE0399","batch":"2023-B","course":"HR Analytics","due":"2024-10-19","fee":18980.0,"paid":20875.0,"status":"Pending","valid":true},{"id":"FEE0424","batch":"2024-B","course":"Full Stack Dev","due":"2023-08-04","fee":51080.0,"paid":76948.0,"status":"Paid","valid":true},{"id":"FEE0094","batch":"2023-B","course":"Full Stack Dev","due":"2024-11-04","fee":110287.0,"paid":80093.0,"status":"Pending","valid":true},{"id":"FEE0429","batch":"2024-B","course":"Full Stack Dev","due":"2023-07-08","fee":57407.0,"paid":3890.0,"status":"Paid","valid":true},{"id":"FEE0149","batch":null,"course":"Full Stack Dev","due":"2023-01-17","fee":81612.0,"paid":70290.0,"status":"Paid","valid":false},{"id":"FEE0481","batch":"2024-A","course":"Business Analytics","due":null,"fee":58060.0,"paid":62813.0,"status":"Paid","valid":false},{"id":"FEE0423","batch":"2023-A","course":"Digital Marketing","due":"2023-07-18","fee":23998.0,"paid":38289.0,"status":"Partial","valid":true},{"id":"FEE0120","batch":"2024-B","course":"Data Analytics","due":"2023-09-13","fee":118022.0,"paid":91057.0,"status":"Paid","valid":true},{"id":"FEE0406","batch":"2023-B","course":"Data Analytics","due":"2024-03-05","fee":15947.0,"paid":23765.0,"status":"Paid","valid":true},{"id":"FEE0139","batch":"2023-B","course":"Full Stack Dev","due":"2024-03-11","fee":31267.0,"paid":3729.0,"status":"Paid","valid":true},{"id":"FEE0170","batch":"2023-A","course":"HR Analytics","due":"2023-07-22","fee":16942.0,"paid":44552.0,"status":"Paid","valid":true},{"id":"FEE0364","batch":"2024-A","course":"HR Analytics","due":"2024-06-22","fee":76710.0,"paid":18909.0,"status":"Partial","valid":true},{"id":"FEE0203","batch":"2024-A","course":"HR Analytics","due":"2024-07-31","fee":47500.0,"paid":42628.0,"status":"Paid","valid":true},{"id":"FEE0148","batch":"2023-A","course":"HR Analytics","due":"2024-11-26","fee":56271.0,"paid":65642.0,"status":"Paid","valid":true},{"id":"FEE0278","batch":"2023-A","course":"Digital Marketing","due":"2023-05-31","fee":43670.0,"paid":17959.0,"status":"Partial","valid":true},{"id":"FEE0257","batch":"2023-B","course":"Full Stack Dev","due":"2023-07-24","fee":62498.0,"paid":89541.0,"status":"Paid","valid":true},{"id":"FEE0457","batch":"2023-A","course":"Data Analytics","due":"2024-04-27","fee":119887.0,"paid":13286.0,"status":"Paid","valid":true},{"id":"FEE0441","batch":"2023-A","course":"Full Stack Dev","due":"2023-01-27","fee":65637.0,"paid":37367.0,"status":"Partial","valid":true},{"id":"FEE0132","batch":"2023-B","course":"Business Analytics","due":"2024-12-07","fee":29892.0,"paid":88290.0,"status":"Paid","valid":true},{"id":"FEE0250","batch":null,"course":"HR Analytics","due":"2023-02-20","fee":null,"paid":63238.0,"status":"Pending","valid":false},{"id":"FEE0153","batch":"2023-A","course":"Business Analytics","due":"2023-10-06","fee":113075.0,"paid":6408.0,"status":"Paid","valid":true},{"id":"FEE0363","batch":"2023-B","course":"Data Analytics","due":"2023-04-13","fee":32358.0,"paid":4870.0,"status":"Partial","valid":true}];
+
+/* ==========================================================================
+   GLOBAL STATE
+   ========================================================================== */
+const CHART_COLORS = { paid:'#34D399', partial:'#FBBF24', pending:'#FB7185', accent:'#4FD1C5', gold:'#E4B85C', dim:'#5B6B85' };
+let state = {
+  data: [],
+  filters: { course:new Set(), batch:new Set(), status:new Set() },
+  sortKey: 'id', sortDir: 1,
+  page: 1, pageSize: 12,
+  search: '',
+  model: null,
+  charts: {}
+};
+
+/* ==========================================================================
+   UTILITIES
+   ========================================================================== */
+function fmtINR(n, decimals){
+  if (n===null || n===undefined || isNaN(n)) return '—';
+  decimals = decimals===undefined ? 0 : decimals;
+  return '₹' + n.toLocaleString('en-IN', {maximumFractionDigits:decimals, minimumFractionDigits:decimals});
+}
+function fmtNum(n){ return n.toLocaleString('en-IN'); }
+function fmtPct(n, decimals){ decimals = decimals===undefined?1:decimals; return n.toFixed(decimals)+'%'; }
+function balanceOf(r){ return (r.fee!==null ? r.fee : 0) - r.paid; }
+
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function seededShuffle(arr, seed){
+  const rng = mulberry32(seed);
+  const a = arr.slice();
+  for (let i=a.length-1; i>0; i--){
+    const j = Math.floor(rng()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+/* ==========================================================================
+   DATA LOADING / CLEANING (mirrors the pipeline used to prep RAW_DATA)
+   ========================================================================== */
+function cleanRawRows(rows){
+  // rows: array of {id,batch,course,due,fee,paid,status} with due as 'YYYY-MM-DD' or Date or null
+  const seen = new Set();
+  const out = [];
+  rows.forEach(r=>{
+    let batch = r.batch;
+    if (batch !== null && batch !== undefined){
+      batch = String(batch).trim().toUpperCase();
+      if (batch === '' || batch === 'NAN') batch = null;
+    } else batch = null;
+
+    let due = r.due;
+    if (due instanceof Date && !isNaN(due)) {
+      due = due.toISOString().slice(0,10);
+    } else if (typeof due === 'string') {
+      const d = new Date(due);
+      due = isNaN(d) ? null : d.toISOString().slice(0,10);
+    } else due = null;
+
+    let fee = (r.fee===null || r.fee===undefined || r.fee==='' || isNaN(r.fee)) ? null : Number(r.fee);
+    let paid = (r.paid===null || r.paid===undefined || r.paid==='' || isNaN(r.paid)) ? 0 : Number(r.paid);
+    const status = r.status ? String(r.status).trim() : null;
+    const id = r.id ? String(r.id).trim() : null;
+    const course = r.course ? String(r.course).trim() : null;
+
+    const key = [id,batch,course,due,fee,paid,status].join('|');
+    if (seen.has(key)) return; // drop exact duplicate rows
+    seen.add(key);
+
+    const valid = fee!==null && fee>=0 && paid>=0 && batch!==null && due!==null && course!==null && status!==null;
+    out.push({ id, batch, course, due, fee, paid, status, valid });
+  });
+  return out;
+}
+
+function loadEmbedded(){
+  state.data = RAW_DATA.map(r=>({...r})); // already cleaned server-side
+  onDataChanged(true);
+}
+
+/* ==========================================================================
+   FILTERING
+   ========================================================================== */
+function applyFilters(rows){
+  const f = state.filters;
+  return rows.filter(r=>{
+    if (f.course.size && !f.course.has(r.course)) return false;
+    if (f.batch.size && !f.batch.has(r.batch)) return false;
+    if (f.status.size && !f.status.has(r.status)) return false;
+    return true;
+  });
+}
+
+/* ==========================================================================
+   RENDER: FILTER CHIPS
+   ========================================================================== */
+function uniqueSorted(rows, key){
+  return [...new Set(rows.filter(r=>r[key]!==null && r[key]!==undefined).map(r=>r[key]))].sort();
+}
+function renderChips(){
+  const courses = uniqueSorted(state.data, 'course');
+  const batches = uniqueSorted(state.data, 'batch');
+  const statuses = ['Paid','Partial','Pending'].filter(s=>state.data.some(r=>r.status===s));
+
+  const build = (containerId, values, setRef, extraClass) => {
+    const el = document.getElementById(containerId);
+    el.innerHTML = '';
+    values.forEach(v=>{
+      const chip = document.createElement('div');
+      chip.className = 'chip' + (extraClass ? ' st-'+v : '') + (setRef.has(v) ? ' active' : '');
+      chip.textContent = v;
+      chip.onclick = ()=>{
+        if (setRef.has(v)) setRef.delete(v); else setRef.add(v);
+        renderChips(); renderAll();
+      };
+      el.appendChild(chip);
+    });
+  };
+  build('courseChips', courses, state.filters.course, false);
+  build('batchChips', batches, state.filters.batch, false);
+  build('statusChips', statuses, state.filters.status, true);
+}
+
+/* ==========================================================================
+   RENDER: KPIs
+   ========================================================================== */
+function renderKPIs(filtered){
+  const valid = filtered.filter(r=>r.valid);
+  const total = filtered.length;
+  const billed = valid.reduce((s,r)=>s+r.fee,0);
+  const collected = valid.reduce((s,r)=>s+r.paid,0);
+  const collectionRate = billed>0 ? (collected/billed*100) : 0;
+  const outstanding = valid.reduce((s,r)=>s+Math.max(r.fee-r.paid,0),0);
+  const paidCount = filtered.filter(r=>r.status==='Paid').length;
+  const partialCount = filtered.filter(r=>r.status==='Partial').length;
+  const pendingCount = filtered.filter(r=>r.status==='Pending').length;
+  const invalidCount = total - valid.length;
+
+  const cards = [
+    { label:'Total Students', value: fmtNum(total), sub: invalidCount? invalidCount+' excluded from totals below (data issues)' : 'all records valid', icon:'users', color:'accent' },
+    { label:'Total Fee Billed', value: fmtINR(billed), sub: valid.length+' valid records', icon:'billed', color:'gold' },
+    { label:'Amount Collected', value: fmtINR(collected), sub: fmtPct(collectionRate)+' collection rate', icon:'collected', color:'paid', subClass: collectionRate>=60?'up':'down' },
+    { label:'Outstanding Balance', value: fmtINR(outstanding), sub:'across valid records', icon:'outstanding', color:'pending' },
+    { label:'Fully Paid', value: fmtNum(paidCount), sub: fmtPct(total?paidCount/total*100:0)+' of students', icon:'paid', color:'paid' },
+    { label:'Partially Paid', value: fmtNum(partialCount), sub: fmtPct(total?partialCount/total*100:0)+' of students', icon:'partial', color:'partial' },
+    { label:'Pending', value: fmtNum(pendingCount), sub: fmtPct(total?pendingCount/total*100:0)+' of students', icon:'pending', color:'pending' },
+    { label:'Avg Fee / Student', value: fmtINR(valid.length? billed/valid.length : 0), sub:'mean total fee', icon:'avg', color:'accent' },
+  ];
+
+  const icons = {
+    users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c1-4 3.5-6 6.5-6s5.5 2 6.5 6"/><circle cx="17.5" cy="9" r="2.6"/><path d="M15 14c2.4.2 4.4 2.1 5.3 6"/></svg>',
+    billed:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg>',
+    collected:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 6a5 4 0 0 0-5-2c-3 0-5 1.6-5 3.7 0 4.6 10 2.1 10 6.7 0 2.2-2.2 3.6-5 3.6s-5-1.2-5.4-3"/></svg>',
+    outstanding:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
+    paid:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9"/></svg>',
+    partial:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none" opacity="0.35"/></svg>',
+    pending:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>',
+    avg:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>'
+  };
+
+  const grid = document.getElementById('kpiGrid');
+  grid.innerHTML = cards.map(c=>`
+    <div class="kpi-card">
+      <div class="kpi-top">
+        <div class="kpi-label">${c.label}</div>
+        <div class="kpi-icon" style="background:var(--${c.color}-dim); color:var(--${c.color});">${icons[c.icon]}</div>
+      </div>
+      <div class="kpi-value">${c.value}</div>
+      <div class="kpi-sub ${c.subClass||''}">${c.sub}</div>
+    </div>
+  `).join('');
+}
+
+/* ==========================================================================
+   RENDER: CHARTS
+   ========================================================================== */
+function destroyChart(key){ if (state.charts[key]) { state.charts[key].destroy(); delete state.charts[key]; } }
+
+function renderCharts(filtered){
+  const valid = filtered.filter(r=>r.valid);
+  Chart.defaults.color = '#93A1B8';
+  Chart.defaults.font.family = "'Inter', sans-serif";
+  Chart.defaults.borderColor = 'rgba(255,255,255,0.06)';
+
+  // --- Billed vs Collected by Course ---
+  const courses = uniqueSorted(valid, 'course');
+  const billedByCourse = courses.map(c=> valid.filter(r=>r.course===c).reduce((s,r)=>s+r.fee,0));
+  const collectedByCourse = courses.map(c=> valid.filter(r=>r.course===c).reduce((s,r)=>s+r.paid,0));
+  destroyChart('courseFee');
+  state.charts.courseFee = new Chart(document.getElementById('chartCourseFee'), {
+    type:'bar',
+    data:{ labels:courses, datasets:[
+      { label:'Billed', data:billedByCourse, backgroundColor:'rgba(228,184,92,0.55)', borderRadius:5, maxBarThickness:26 },
+      { label:'Collected', data:collectedByCourse, backgroundColor:'rgba(79,209,197,0.7)', borderRadius:5, maxBarThickness:26 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{boxWidth:10, boxHeight:10, usePointStyle:true} } },
+      scales:{ x:{ grid:{display:false} }, y:{ ticks:{ callback:v=>fmtINRshort(v) }, grid:{color:'rgba(255,255,255,0.05)'} } }
+    }
+  });
+
+  // --- Status donut ---
+  const statusCounts = ['Paid','Partial','Pending'].map(s=>filtered.filter(r=>r.status===s).length);
+  destroyChart('statusDonut');
+  state.charts.statusDonut = new Chart(document.getElementById('chartStatusDonut'), {
+    type:'doughnut',
+    data:{ labels:['Paid','Partial','Pending'], datasets:[{ data:statusCounts, backgroundColor:[CHART_COLORS.paid,CHART_COLORS.partial,CHART_COLORS.pending], borderColor:'#111A2C', borderWidth:3 }]},
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'68%',
+      plugins:{ legend:{ position:'bottom', labels:{boxWidth:10, boxHeight:10, usePointStyle:true} } } }
+  });
+
+  // --- Billed vs collected by batch ---
+  const batches = uniqueSorted(valid, 'batch');
+  const billedByBatch = batches.map(b=> valid.filter(r=>r.batch===b).reduce((s,r)=>s+r.fee,0));
+  const collectedByBatch = batches.map(b=> valid.filter(r=>r.batch===b).reduce((s,r)=>s+r.paid,0));
+  destroyChart('batchFee');
+  state.charts.batchFee = new Chart(document.getElementById('chartBatchFee'), {
+    type:'bar',
+    data:{ labels:batches, datasets:[
+      { label:'Billed', data:billedByBatch, backgroundColor:'rgba(228,184,92,0.55)', borderRadius:5, maxBarThickness:22 },
+      { label:'Collected', data:collectedByBatch, backgroundColor:'rgba(79,209,197,0.7)', borderRadius:5, maxBarThickness:22 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{ x:{ grid:{display:false} }, y:{ ticks:{ callback:v=>fmtINRshort(v) }, grid:{color:'rgba(255,255,255,0.05)'} } } }
+  });
+
+  // --- Collection rate by course ---
+  const collRate = courses.map((c,i)=> billedByCourse[i]>0 ? (collectedByCourse[i]/billedByCourse[i]*100) : 0);
+  destroyChart('collRate');
+  state.charts.collRate = new Chart(document.getElementById('chartCollectionRate'), {
+    type:'bar',
+    data:{ labels:courses, datasets:[{ data:collRate.map(v=>+v.toFixed(1)), backgroundColor:collRate.map(v=> v>=70?CHART_COLORS.paid : v>=40?CHART_COLORS.partial:CHART_COLORS.pending), borderRadius:5, maxBarThickness:22 }]},
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:ctx=>ctx.raw+'%' } } },
+      scales:{ x:{ max:100, ticks:{ callback:v=>v+'%' }, grid:{color:'rgba(255,255,255,0.05)'} }, y:{ grid:{display:false} } } }
+  });
+
+  // --- Outstanding balance by course ---
+  const outstandingByCourse = courses.map(c=> valid.filter(r=>r.course===c).reduce((s,r)=>s+Math.max(r.fee-r.paid,0),0));
+  destroyChart('outstanding');
+  state.charts.outstanding = new Chart(document.getElementById('chartOutstanding'), {
+    type:'bar',
+    data:{ labels:courses, datasets:[{ data:outstandingByCourse, backgroundColor:'rgba(251,113,133,0.65)', borderRadius:5, maxBarThickness:22 }]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{ x:{ grid:{display:false} }, y:{ ticks:{ callback:v=>fmtINRshort(v) }, grid:{color:'rgba(255,255,255,0.05)'} } } }
+  });
+
+  // --- Timeline by month ---
+  const monthMap = {};
+  valid.forEach(r=>{
+    const m = r.due.slice(0,7);
+    if (!monthMap[m]) monthMap[m] = { due:0, collected:0 };
+    monthMap[m].due += r.fee;
+    monthMap[m].collected += r.paid;
+  });
+  const months = Object.keys(monthMap).sort();
+  destroyChart('timeline');
+  state.charts.timeline = new Chart(document.getElementById('chartTimeline'), {
+    type:'line',
+    data:{ labels:months, datasets:[
+      { label:'Fee Due', data:months.map(m=>monthMap[m].due), borderColor:CHART_COLORS.gold, backgroundColor:'rgba(228,184,92,0.12)', fill:true, tension:0.35, pointRadius:2 },
+      { label:'Collected', data:months.map(m=>monthMap[m].collected), borderColor:CHART_COLORS.accent, backgroundColor:'rgba(79,209,197,0.12)', fill:true, tension:0.35, pointRadius:2 }
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:'bottom', labels:{boxWidth:10, boxHeight:10, usePointStyle:true} } },
+      scales:{ x:{ grid:{display:false} }, y:{ ticks:{ callback:v=>fmtINRshort(v) }, grid:{color:'rgba(255,255,255,0.05)'} } } }
+  });
+}
+function fmtINRshort(v){
+  if (Math.abs(v)>=10000000) return '₹'+(v/10000000).toFixed(1)+'Cr';
+  if (Math.abs(v)>=100000) return '₹'+(v/100000).toFixed(1)+'L';
+  if (Math.abs(v)>=1000) return '₹'+(v/1000).toFixed(0)+'k';
+  return '₹'+v;
+}
+
+/* ==========================================================================
+   MODEL: SOFTMAX REGRESSION (trained from scratch, in-browser)
+   ========================================================================== */
+function buildFeatureRows(validRows){
+  const snapshot = validRows.reduce((max,r)=> r.due>max?r.due:max, validRows[0].due);
+  const snapshotDate = new Date(snapshot);
+  const courses = uniqueSorted(validRows,'course');
+  const batches = uniqueSorted(validRows,'batch');
+  const classes = ['Paid','Partial','Pending'].filter(c=>validRows.some(r=>r.status===c));
+
+  const rows = validRows.map(r=>{
+    const daysOverdue = (snapshotDate - new Date(r.due)) / 86400000;
+    const paidRatio = Math.min(r.paid / r.fee, 3);
+    return { fee:r.fee, daysOverdue, paidRatio, amountPaid:r.paid, course:r.course, batch:r.batch, status:r.status };
+  });
+
+  const numKeys = ['fee','daysOverdue','paidRatio','amountPaid'];
+  const mu = {}, sd = {};
+  numKeys.forEach(k=>{
+    const vals = rows.map(r=>r[k]);
+    const m = vals.reduce((a,b)=>a+b,0)/vals.length;
+    const v = Math.sqrt(vals.reduce((a,b)=>a+(b-m)*(b-m),0)/vals.length) || 1;
+    mu[k]=m; sd[k]=v;
+  });
+
+  const featureNames = [...numKeys.map(k=>'num:'+k), ...courses.map(c=>'course:'+c), ...batches.map(b=>'batch:'+b)];
+  const X = rows.map(r=>{
+    const numPart = numKeys.map(k=>(r[k]-mu[k])/sd[k]);
+    const coursePart = courses.map(c=> r.course===c ? 1 : 0);
+    const batchPart = batches.map(b=> r.batch===b ? 1 : 0);
+    return [...numPart, ...coursePart, ...batchPart];
+  });
+  const y = rows.map(r=>classes.indexOf(r.status));
+
+  return { X, y, mu, sd, courses, batches, classes, featureNames, snapshot };
+}
+
+function trainSoftmax(X, y, nClasses, opts){
+  opts = opts || {};
+  const lr = opts.lr || 0.1, lambda = opts.lambda===undefined?0.01:opts.lambda, iters = opts.iters || 3000;
+  const n = X.length, nFeatures = X[0].length;
+  let W = Array.from({length:nFeatures}, ()=> new Array(nClasses).fill(0));
+  let b = new Array(nClasses).fill(0);
+
+  for (let it=0; it<iters; it++){
+    const gW = Array.from({length:nFeatures}, ()=> new Array(nClasses).fill(0));
+    const gb = new Array(nClasses).fill(0);
+    for (let i=0;i<n;i++){
+      const xi = X[i];
+      const logits = new Array(nClasses).fill(0);
+      for (let c=0;c<nClasses;c++){
+        let s = b[c];
+        for (let f=0; f<nFeatures; f++) s += xi[f]*W[f][c];
+        logits[c] = s;
+      }
+      const maxL = Math.max(...logits);
+      const exps = logits.map(l=>Math.exp(l-maxL));
+      const sumExp = exps.reduce((a,c)=>a+c,0);
+      const probs = exps.map(e=>e/sumExp);
+      for (let c=0;c<nClasses;c++){
+        const grad = probs[c] - (y[i]===c?1:0);
+        gb[c]+=grad;
+        for (let f=0; f<nFeatures; f++) gW[f][c]+=xi[f]*grad;
+      }
+    }
+    for (let f=0; f<nFeatures; f++) for (let c=0;c<nClasses;c++) W[f][c] -= lr*( gW[f][c]/n + lambda*W[f][c]/n );
+    for (let c=0;c<nClasses;c++) b[c] -= lr*(gb[c]/n);
+  }
+  return { W, b };
+}
+
+function forwardProbs(xi, W, b, nClasses){
+  const nFeatures = xi.length;
+  const logits = new Array(nClasses).fill(0);
+  for (let c=0;c<nClasses;c++){
+    let s = b[c];
+    for (let f=0; f<nFeatures; f++) s += xi[f]*W[f][c];
+    logits[c] = s;
+  }
+  const maxL = Math.max(...logits);
+  const exps = logits.map(l=>Math.exp(l-maxL));
+  const sumExp = exps.reduce((a,c)=>a+c,0);
+  return { probs:exps.map(e=>e/sumExp), logits };
+}
+
+function trainAndEvaluate(validRows){
+  if (validRows.length < 20) return null;
+  const built = buildFeatureRows(validRows);
+  const { X, y, classes, featureNames } = built;
+  const nClasses = classes.length;
+
+  const idx = seededShuffle([...Array(X.length).keys()], 42);
+  const splitAt = Math.floor(X.length*0.8);
+  const trainIdx = idx.slice(0, splitAt), testIdx = idx.slice(splitAt);
+  const Xtr = trainIdx.map(i=>X[i]), ytr = trainIdx.map(i=>y[i]);
+  const Xte = testIdx.map(i=>X[i]), yte = testIdx.map(i=>y[i]);
+
+  const { W, b } = trainSoftmax(Xtr, ytr, nClasses, { lr:0.1, lambda:0.01, iters:3000 });
+
+  const predTe = Xte.map(xi=> forwardProbs(xi, W, b, nClasses).probs);
+  const predClassTe = predTe.map(p=> p.indexOf(Math.max(...p)));
+
+  const cm = Array.from({length:nClasses}, ()=> new Array(nClasses).fill(0));
+  yte.forEach((t,i)=> cm[t][predClassTe[i]]++ );
+
+  let correct = 0;
+  for (let c=0;c<nClasses;c++) correct += cm[c][c];
+  const accuracy = yte.length ? correct/yte.length : 0;
+
+  const perClass = classes.map((cls, c)=>{
+    const tp = cm[c][c];
+    const fp = cm.reduce((s,row,r)=> r===c?s : s+row[c], 0);
+    const fn = cm[c].reduce((s,v,cc)=> cc===c?s : s+v, 0);
+    const precision = (tp+fp)>0 ? tp/(tp+fp) : 0;
+    const recall = (tp+fn)>0 ? tp/(tp+fn) : 0;
+    const f1 = (precision+recall)>0 ? 2*precision*recall/(precision+recall) : 0;
+    const support = cm[c].reduce((a,b2)=>a+b2,0);
+    return { cls, precision, recall, f1, support };
+  });
+  const macroP = perClass.reduce((s,p)=>s+p.precision,0)/nClasses;
+  const macroR = perClass.reduce((s,p)=>s+p.recall,0)/nClasses;
+  const macroF1 = perClass.reduce((s,p)=>s+p.f1,0)/nClasses;
+
+  // baseline: majority class accuracy on test set
+  const counts = {};
+  ytr.forEach(v=>counts[v]=(counts[v]||0)+1);
+  const majority = Object.keys(counts).reduce((a,b2)=> counts[a]>counts[b2]?a:b2);
+  const baselineAcc = yte.filter(v=>String(v)===majority).length / (yte.length||1);
+
+  // feature importance: mean absolute weight across classes
+  const importance = featureNames.map((name,f)=>{
+    const avgAbs = built.classes.reduce((s,_,c)=>s+Math.abs(W[f][c]),0)/nClasses;
+    return { name, avgAbs };
+  }).sort((a,b2)=>b2.avgAbs-a.avgAbs);
+
+  return {
+    W, b, classes, featureNames, mu:built.mu, sd:built.sd, courses:built.courses, batches:built.batches, snapshot:built.snapshot,
+    nTrain:Xtr.length, nTest:Xte.length, accuracy, baselineAcc, cm, perClass, macroP, macroR, macroF1
+  };
+}
+
+/* ==========================================================================
+   RENDER: MODEL PERFORMANCE TAB
+   ========================================================================== */
+function renderModelTab(){
+  const m = state.model;
+  if (!m){
+    document.getElementById('metricGrid').innerHTML = '<div class="empty-note">Not enough valid records to train a model (need at least 20).</div>';
+    return;
+  }
+  const cards = [
+    { l:'Test Accuracy', v: fmtPct(m.accuracy*100) },
+    { l:'Baseline (majority)', v: fmtPct(m.baselineAcc*100) },
+    { l:'Macro Precision', v: fmtPct(m.macroP*100) },
+    { l:'Macro Recall', v: fmtPct(m.macroR*100) },
+    { l:'Macro F1', v: fmtPct(m.macroF1*100) },
+  ];
+  document.getElementById('metricGrid').innerHTML = cards.map(c=>`<div class="metric-card"><div class="v">${c.v}</div><div class="l">${c.l}</div></div>`).join('');
+
+  // confusion matrix
+  let cmHtml = '<table class="cm-table"><tr><th></th>' + m.classes.map(c=>`<th>Pred: ${c}</th>`).join('') + '</tr>';
+  m.cm.forEach((row,i)=>{
+    cmHtml += `<tr><th>Actual: ${m.classes[i]}</th>` + row.map((v,j)=>`<td class="${i===j?'cm-diag':''}">${v}</td>`).join('') + '</tr>';
+  });
+  cmHtml += '</table>';
+  document.getElementById('cmWrap').innerHTML = cmHtml;
+
+  // per class metrics
+  let pcHtml = '<table class="metrics-table"><tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1</th><th>Support</th></tr>';
+  m.perClass.forEach(p=>{
+    pcHtml += `<tr><td class="lbl">${p.cls}</td><td>${fmtPct(p.precision*100)}</td><td>${fmtPct(p.recall*100)}</td><td>${fmtPct(p.f1*100)}</td><td>${p.support}</td></tr>`;
+  });
+  pcHtml += '</table>';
+  document.getElementById('perClassWrap').innerHTML = pcHtml;
+
+  // feature importance chart
+  const imp = [...m.featureNames.map((name,f)=>({name:humanFeatureName(name), avgAbs: m.classes.reduce((s,_,c)=>s+Math.abs(m.W[f][c]),0)/m.classes.length}))].sort((a,b)=>b.avgAbs-a.avgAbs);
+  destroyChart('featImp');
+  state.charts.featImp = new Chart(document.getElementById('chartFeatureImportance'), {
+    type:'bar',
+    data:{ labels:imp.map(i=>i.name), datasets:[{ data:imp.map(i=>+i.avgAbs.toFixed(3)), backgroundColor:'rgba(79,209,197,0.65)', borderRadius:4 }]},
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{ x:{ grid:{color:'rgba(255,255,255,0.05)'} }, y:{ grid:{display:false} } } }
+  });
+
+  const gapPts = ((m.accuracy - m.baselineAcc)*100).toFixed(1);
+  document.getElementById('modelCallout').innerHTML =
+    `<b>Reading these numbers honestly:</b> the model was trained on ${m.nTrain} records and evaluated on ${m.nTest} held-out records (fixed 80/20 split, seeded shuffle — reproducible on every page load). `
+    + `Test accuracy is ${fmtPct(m.accuracy*100)} versus a ${fmtPct(m.baselineAcc*100)} majority-class baseline (a model that always predicts "${m.classes[0]}"), a gap of ${gapPts>=0?'+':''}${gapPts} points. `
+    + (Math.abs(m.accuracy-m.baselineAcc) < 0.08
+        ? `That gap is small — fee amount, due-date timing, course and batch alone carry <b>limited signal</b> for predicting final payment status in this dataset. Treat predictions as a rough screening signal, not a reliable individual forecast.`
+        : `The model meaningfully outperforms the baseline, suggesting these features do carry some real signal for payment status.`);
+}
+function humanFeatureName(key){
+  const map = { 'num:fee':'Total Fee', 'num:daysOverdue':'Days Overdue (vs latest due date)', 'num:paidRatio':'Amount Paid Ratio', 'num:amountPaid':'Amount Paid So Far' };
+  if (map[key]) return map[key];
+  if (key.startsWith('course:')) return 'Course: '+key.slice(7);
+  if (key.startsWith('batch:')) return 'Batch: '+key.slice(6);
+  return key;
+}
+
+/* ==========================================================================
+   PREDICTION TAB
+   ========================================================================== */
+function populatePredictionForm(){
+  const courses = uniqueSorted(state.data,'course');
+  const batches = uniqueSorted(state.data,'batch');
+  document.getElementById('inCourse').innerHTML = courses.map(c=>`<option>${c}</option>`).join('');
+  document.getElementById('inBatch').innerHTML = batches.map(b=>`<option>${b}</option>`).join('');
+  const dueInput = document.getElementById('inDue');
+  if (state.model && state.model.snapshot) dueInput.value = state.model.snapshot;
+}
+
+function runPrediction(){
+  const m = state.model;
+  if (!m){ alert('Model is not trained yet (not enough valid data).'); return; }
+
+  const course = document.getElementById('inCourse').value;
+  const batch = document.getElementById('inBatch').value;
+  const fee = Math.max(0, Number(document.getElementById('inFee').value)||0);
+  const paid = Math.max(0, Number(document.getElementById('inPaid').value)||0);
+  const due = document.getElementById('inDue').value || m.snapshot;
+
+  const daysOverdue = (new Date(m.snapshot) - new Date(due)) / 86400000;
+  const paidRatio = Math.min(fee>0 ? paid/fee : 0, 3);
+
+  const numVals = { fee, daysOverdue, paidRatio, amountPaid:paid };
+  const numKeys = ['fee','daysOverdue','paidRatio','amountPaid'];
+  const numPart = numKeys.map(k=> (numVals[k]-m.mu[k])/m.sd[k] );
+  const coursePart = m.courses.map(c=> c===course?1:0);
+  const batchPart = m.batches.map(b=> b===batch?1:0);
+  const xi = [...numPart, ...coursePart, ...batchPart];
+
+  const { probs } = forwardProbs(xi, m.W, m.b, m.classes.length);
+  const predIdx = probs.indexOf(Math.max(...probs));
+  const paidIdx = m.classes.indexOf('Paid');
+  const riskScore = 1 - (paidIdx>=0 ? probs[paidIdx] : 0);
+  const riskPct = riskScore*100;
+  const riskLevel = riskPct < 35 ? 'LOW' : riskPct < 65 ? 'MEDIUM' : 'HIGH';
+
+  document.getElementById('predEmpty').style.display = 'none';
+  document.getElementById('predResult').style.display = 'block';
+  document.getElementById('explainPanel').style.display = 'block';
+
+  document.getElementById('riskBadge').textContent = riskLevel + ' RISK — ' + riskPct.toFixed(0) + '%';
+  document.getElementById('riskBadge').className = 'risk-badge ' + riskLevel;
+
+  drawGauge(riskPct);
+
+  const colorFor = { Paid:CHART_COLORS.paid, Partial:CHART_COLORS.partial, Pending:CHART_COLORS.pending };
+  const rowsHtml = m.classes.map((cls,i)=>{
+    const pct = (probs[i]*100);
+    return `<div class="pred-class-row">
+      <div class="pred-class-name"><span class="dot" style="background:${colorFor[cls]}"></span>${cls}${i===predIdx?' <span style=\"color:var(--text-faint); font-weight:400;\">(most likely)</span>':''}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%; background:${colorFor[cls]};"></div></div>
+      <div class="pred-class-pct">${pct.toFixed(1)}%</div>
+    </div>`;
+  }).join('');
+  document.getElementById('predClassRows').innerHTML = rowsHtml;
+
+  // explainability: contribution to "risk logit" = sum over non-Paid classes minus Paid class
+  const partialIdx = m.classes.indexOf('Partial'), pendingIdx = m.classes.indexOf('Pending');
+  const featureNames = m.featureNames;
+  const contributions = xi.map((val,f)=>{
+    let w = 0;
+    if (partialIdx>=0) w += m.W[f][partialIdx];
+    if (pendingIdx>=0) w += m.W[f][pendingIdx];
+    if (paidIdx>=0) w -= m.W[f][paidIdx];
+    return { name: humanFeatureName(featureNames[f]), contribution: val*w };
+  }).sort((a,b)=>Math.abs(b.contribution)-Math.abs(a.contribution)).slice(0,6);
+
+  const maxAbs = Math.max(...contributions.map(c=>Math.abs(c.contribution)), 0.001);
+  document.getElementById('factorRows').innerHTML = contributions.map(c=>{
+    const pct = Math.abs(c.contribution)/maxAbs*100;
+    const positive = c.contribution >= 0;
+    return `<div class="factor-row">
+      <div class="factor-label">${c.name}</div>
+      <div class="factor-bar-track">
+        <div class="factor-bar-fill" style="width:${pct}%; ${positive?'right:50%; background:'+CHART_COLORS.pending+';':'left:50%; background:'+CHART_COLORS.paid+';'}"></div>
+        <div style="position:absolute; left:50%; top:0; bottom:0; width:1px; background:rgba(255,255,255,0.15);"></div>
+      </div>
+      <div class="factor-val" style="color:${positive?CHART_COLORS.pending:CHART_COLORS.paid}">${positive?'+':''}${c.contribution.toFixed(2)}</div>
+    </div>`;
+  }).join('');
+}
+
+function drawGauge(riskPct){
+  destroyChart('gauge');
+  const color = riskPct<35?CHART_COLORS.paid:riskPct<65?CHART_COLORS.partial:CHART_COLORS.pending;
+  state.charts.gauge = new Chart(document.getElementById('chartGauge'), {
+    type:'doughnut',
+    data:{ datasets:[{ data:[riskPct, 100-riskPct], backgroundColor:[color,'#1B2740'], borderWidth:0 }]},
+    options:{
+      responsive:true, maintainAspectRatio:false, circumference:180, rotation:270, cutout:'75%',
+      plugins:{ legend:{display:false}, tooltip:{enabled:false} }
+    }
+  });
+}
+
+/* ==========================================================================
+   DATA EXPLORER TAB
+   ========================================================================== */
+function renderExplorer(filtered){
+  let rows = filtered.filter(r=>{
+    if (!state.search) return true;
+    const s = state.search.toLowerCase();
+    return (r.id||'').toLowerCase().includes(s) || (r.course||'').toLowerCase().includes(s) || (r.batch||'').toLowerCase().includes(s) || (r.status||'').toLowerCase().includes(s);
+  });
+
+  rows = rows.slice().sort((a,b)=>{
+    let av = state.sortKey==='balance' ? balanceOf(a) : a[state.sortKey];
+    let bv = state.sortKey==='balance' ? balanceOf(b) : b[state.sortKey];
+    if (av===null||av===undefined) av = '';
+    if (bv===null||bv===undefined) bv = '';
+    if (typeof av==='string') return av.localeCompare(bv)*state.sortDir;
+    return (av-bv)*state.sortDir;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(rows.length/state.pageSize));
+  if (state.page>totalPages) state.page = totalPages;
+  const startIdx = (state.page-1)*state.pageSize;
+  const pageRows = rows.slice(startIdx, startIdx+state.pageSize);
+
+  document.getElementById('explorerCount').textContent = rows.length + ' records';
+  document.getElementById('tableBody').innerHTML = pageRows.map(r=>`
+    <tr>
+      <td>${!r.valid?'<span class="flag-icon" title="Data quality issue">⚠</span>':''}${r.id||'—'}</td>
+      <td>${r.batch||'—'}</td>
+      <td style="font-family:var(--font-body);">${r.course||'—'}</td>
+      <td>${r.due||'—'}</td>
+      <td>${r.fee!==null?fmtINR(r.fee):'—'}</td>
+      <td>${fmtINR(r.paid)}</td>
+      <td>${r.fee!==null?fmtINR(balanceOf(r)):'—'}</td>
+      <td><span class="status-pill ${r.status}">${r.status||'—'}</span></td>
+    </tr>
+  `).join('');
+
+  document.getElementById('pagerInfo').textContent = `Page ${state.page} of ${totalPages}`;
+  document.getElementById('prevPageBtn').disabled = state.page<=1;
+  document.getElementById('nextPageBtn').disabled = state.page>=totalPages;
+}
+
+/* ==========================================================================
+   ABOUT TAB
+   ========================================================================== */
+function renderAbout(){
+  const n = state.data.length;
+  const valid = state.data.filter(r=>r.valid).length;
+  const invalid = n-valid;
+  const dupesRemoved = state.dupesRemoved || 0;
+
+  document.getElementById('aboutDatasetSummary').innerHTML =
+    `The <span class="mono">FeeCollection</span> sheet tracks per-student fee records across five training courses and four cohort batches. `
+    + `After cleaning, the working dataset has <b style="color:var(--text)">${fmtNum(n)} records</b> across <b style="color:var(--text)">7 source columns</b>, of which <b style="color:var(--text)">${fmtNum(valid)}</b> pass full validation and are used for totals, KPIs and model training.`;
+
+  const cols = [
+    ['StudentID','text — unique student identifier'],
+    ['Batch','category — cohort (e.g. 2023-A)'],
+    ['Course','category — enrolled course'],
+    ['DueDate','date — fee due date'],
+    ['TotalFee','number — total fee amount (₹)'],
+    ['AmountPaid','number — amount paid so far (₹)'],
+    ['PaymentStatus','category — Paid / Partial / Pending (target variable)']
+  ];
+  document.getElementById('aboutColumns').innerHTML = cols.map(c=>`<div class="col-item"><span>${c[0]}</span><span>${c[1]}</span></div>`).join('');
+
+  document.getElementById('aboutCleaning').innerHTML = `
+    <li><b>Duplicates:</b> ${dupesRemoved} exact duplicate row(s) removed.</li>
+    <li><b>Batch text:</b> whitespace trimmed and casing normalized (e.g. " 2024-a " → "2024-A").</li>
+    <li><b>Missing values:</b> rows with a missing Batch, DueDate, TotalFee or PaymentStatus are kept and shown in the Data Explorer (flagged ⚠) but excluded from KPI totals and model training.</li>
+    <li><b>Invalid amounts:</b> rows with a negative TotalFee or AmountPaid are treated as data-entry errors and excluded from totals and training, same as missing values.</li>
+    <li><b>Result:</b> ${fmtNum(valid)} of ${fmtNum(n)} records (${fmtPct(n?valid/n*100:0)}) are used for KPIs, charts and the prediction model; the rest remain visible in Data Explorer only.</li>
+  `;
+
+  const m = state.model;
+  document.getElementById('aboutLimitation').textContent = m
+    ? `Honest caveat: on this dataset, test accuracy (${fmtPct(m.accuracy*100)}) sits close to the majority-class baseline (${fmtPct(m.baselineAcc*100)}). Total fee, due-date timing, course and batch do not strongly determine whether a student ends up Paid, Partial, or Pending here — so treat the predictor as an illustrative screening tool, not a precise forecast.`
+    : `Not enough valid records to train a model.`;
+}
+
+/* ==========================================================================
+   MAIN RENDER / EVENTS
+   ========================================================================== */
+function renderAll(){
+  const filtered = applyFilters(state.data);
+  renderKPIs(filtered);
+  renderCharts(filtered);
+  renderExplorer(filtered);
+  document.getElementById('statusNote').textContent = filtered.length + ' of ' + state.data.length + ' records';
+}
+
+function onDataChanged(isInitial){
+  document.getElementById('footRecords').textContent = fmtNum(state.data.length);
+  const valid = state.data.filter(r=>r.valid);
+  state.model = valid.length>=20 ? trainAndEvaluate(valid) : null;
+  state.page = 1;
+  renderChips();
+  populatePredictionForm();
+  renderAll();
+  renderModelTab();
+  renderAbout();
+  document.getElementById('predEmpty').style.display = 'block';
+  document.getElementById('predResult').style.display = 'none';
+  document.getElementById('explainPanel').style.display = 'none';
+}
+
+function setupTabs(){
+  const titles = {
+    dashboard:['Dashboard','Fee collection overview across courses and batches'],
+    prediction:['Prediction','Estimate non-payment risk for a student'],
+    model:['Model Performance','How well the in-browser model actually performs'],
+    explorer:['Data Explorer','Search, sort and browse every record'],
+    about:['About','Dataset, cleaning steps, and model limitations']
+  };
+  document.querySelectorAll('.nav-item').forEach(item=>{
+    item.addEventListener('click', ()=>{
+      document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+      item.classList.add('active');
+      const tab = item.dataset.tab;
+      document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+      document.getElementById('tab-'+tab).classList.add('active');
+      document.getElementById('pageTitle').textContent = titles[tab][0];
+      document.getElementById('pageDesc').textContent = titles[tab][1];
+      document.getElementById('globalFilters').style.display = (tab==='dashboard'||tab==='explorer') ? 'flex' : 'none';
+      document.getElementById('sidebar').classList.remove('open');
+    });
+  });
+}
+
+function setupEvents(){
+  document.getElementById('resetFiltersBtn').onclick = ()=>{
+    state.filters.course.clear(); state.filters.batch.clear(); state.filters.status.clear();
+    renderChips(); renderAll();
+  };
+  document.getElementById('predictBtn').onclick = runPrediction;
+  document.getElementById('searchInput').oninput = (e)=>{ state.search = e.target.value; state.page=1; renderExplorer(applyFilters(state.data)); };
+  document.getElementById('prevPageBtn').onclick = ()=>{ if(state.page>1){ state.page--; renderExplorer(applyFilters(state.data)); } };
+  document.getElementById('nextPageBtn').onclick = ()=>{ state.page++; renderExplorer(applyFilters(state.data)); };
+  document.querySelectorAll('th[data-key]').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const key = th.dataset.key;
+      if (state.sortKey===key) state.sortDir *= -1; else { state.sortKey = key; state.sortDir = 1; }
+      renderExplorer(applyFilters(state.data));
+    });
+  });
+  document.getElementById('resetDataBtn').onclick = ()=>{
+    state.dupesRemoved = ORIGINAL_DUPES_REMOVED;
+    loadEmbedded();
+  };
+  document.getElementById('fileUpload').addEventListener('change', handleUpload);
+  document.getElementById('hamburgerBtn').addEventListener('click', ()=>{
+    document.getElementById('sidebar').classList.toggle('open');
+  });
+  window.addEventListener('resize', ()=>{
+    document.getElementById('hamburgerBtn').style.display = window.innerWidth<=860 ? 'flex':'none';
+  });
+  document.getElementById('hamburgerBtn').style.display = window.innerWidth<=860 ? 'flex':'none';
+}
+
+function handleUpload(e){
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt)=>{
+    try{
+      const wb = XLSX.read(evt.target.result, { type:'array', cellDates:true });
+      const sheetName = wb.SheetNames[0];
+      const json = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval:null });
+      const mapped = mapUploadedRows(json);
+      const before = mapped.length;
+      const cleaned = cleanRawRows(mapped);
+      state.dupesRemoved = before - cleaned.length;
+      state.data = cleaned;
+      onDataChanged(false);
+    }catch(err){
+      alert('Could not read this file. Expected columns: StudentID, Batch, Course, DueDate, TotalFee, AmountPaid, PaymentStatus.\\n\\n'+err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  e.target.value = '';
+}
+function mapUploadedRows(json){
+  const keyMap = { studentid:'id', batch:'batch', course:'course', duedate:'due', totalfee:'fee', amountpaid:'paid', paymentstatus:'status' };
+  return json.map(row=>{
+    const out = {};
+    Object.keys(row).forEach(k=>{
+      const norm = k.toLowerCase().replace(/[^a-z]/g,'');
+      if (keyMap[norm]) out[keyMap[norm]] = row[k];
+    });
+    return out;
+  });
+}
+
+/* ==========================================================================
+   INIT
+   ========================================================================== */
+const ORIGINAL_DUPES_REMOVED = 5;
+state.dupesRemoved = ORIGINAL_DUPES_REMOVED;
+setupTabs();
+setupEvents();
+loadEmbedded();
+</script>
+</body>
+</html>
