@@ -1,4 +1,6 @@
 # Fee Payment Tracker Dashboard and Prediction
+🌐 **Live Dashboard:**  
+[▶ View Live Dashboard](https://rishithareddy-12.github.io/Fee-payment-tracker-dashboard-and-prediction/)
 
 ## 📊 Project Overview
 
