@@ -1,0 +1,19 @@
+{
+  "name": "fee-payment-tracker-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fee Payment Tracker Dashboard and Prediction - static web dashboard",
+  "scripts": {
+    "dev": "serve -s . -l ${PORT:-3000}",
+    "start": "serve -s . -l ${PORT:-3000}"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rishithareddy-12/Fee-payment-tracker-dashboard-and-prediction.git"
+  },
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "serve": "^14.2.6"
+  }
+}
